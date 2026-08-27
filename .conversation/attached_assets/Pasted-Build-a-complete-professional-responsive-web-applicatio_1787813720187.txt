@@ -1,0 +1,1119 @@
+Build a complete, professional, responsive web application called:
+
+STUDENT ATTENDANCE ANALYSIS SYSTEM
+
+This is Version 1 of the project.
+
+IMPORTANT:
+The application must be focused ONLY on student attendance analysis using uploaded Excel files.
+
+Do NOT add:
+- Marks Analysis
+- Supabase
+- Google Maps
+- Google Cloud
+- AI chatbot
+- Login/authentication
+- Any external database
+- Any unnecessary backend service
+
+The application should process the uploaded Excel file directly in the application and generate attendance analysis, visualizations, and downloadable Excel reports.
+
+==================================================
+1. PROJECT PURPOSE
+==================================================
+
+The purpose of this application is to analyze student attendance subject-wise from an uploaded Excel file.
+
+The user will:
+
+1. Upload an attendance Excel file.
+2. Enter/select the Academic Year.
+3. Enter/select the Section.
+4. Select the attendance analysis range:
+   - Below 65%
+   - 65% to 74%
+5. Select the attendance date/sheet when required.
+6. Click Analyze.
+7. The application analyzes the Excel data.
+8. Display student-wise and subject-wise attendance results.
+9. Display counts and statistics.
+10. Display graphs.
+11. Allow the user to download the analyzed results as an Excel file.
+
+==================================================
+2. APPLICATION HEADER
+==================================================
+
+The main application should display:
+
+Student Attendance Analysis System
+
+Also display:
+
+Name: [USER NAME]
+
+Department: [DEPARTMENT NAME]
+
+IMPORTANT:
+Do not invent a name or department.
+
+Create these as clearly editable configuration values/placeholders so I can enter my actual name and department later.
+
+Example:
+
+Name: YOUR NAME
+Department: YOUR DEPARTMENT
+
+==================================================
+3. MAIN NAVIGATION
+==================================================
+
+Create a clean navigation/sidebar with:
+
+- Dashboard
+- Attendance Analysis
+- Reports
+
+Do NOT create Marks Analysis yet.
+
+Marks Analysis will be added in a future version after the marks Excel format is finalized.
+
+==================================================
+4. DASHBOARD
+==================================================
+
+Create a professional dashboard.
+
+The dashboard should contain:
+
+- Total Students
+- Total Subjects
+- Students in Selected Range
+- Total Subject-wise Cases
+- Selected Year
+- Selected Section
+- Selected Analysis Date
+
+Initially, before an Excel file is uploaded, show appropriate empty states such as:
+
+"No attendance file uploaded"
+
+After analysis, automatically populate the dashboard statistics.
+
+Use attractive statistic cards.
+
+The dashboard should update dynamically based on the latest analysis.
+
+==================================================
+5. ATTENDANCE ANALYSIS PAGE
+==================================================
+
+This is the main page of the application.
+
+Create the following workflow:
+
+------------------------------------------
+STEP 1 — UPLOAD EXCEL
+------------------------------------------
+
+Provide an Excel upload area.
+
+Supported file type:
+
+.xlsx
+
+The user should be able to drag and drop the Excel file or browse for it.
+
+After upload:
+
+- Display file name.
+- Display number of sheets.
+- Display detected sheet/date names.
+- Show a successful upload message.
+
+Example:
+
+Attendance file uploaded successfully.
+
+File:
+attendance.xlsx
+
+Sheets detected:
+6
+
+------------------------------------------
+STEP 2 — SELECT / ENTER YEAR
+------------------------------------------
+
+Provide a field:
+
+Academic Year
+
+Example:
+
+[ 2nd Year ]
+
+The value should be entered or selected by the user.
+
+IMPORTANT:
+Do NOT try to extract the Academic Year from the Excel file.
+
+The user explicitly provides the Year.
+
+------------------------------------------
+STEP 3 — SELECT / ENTER SECTION
+------------------------------------------
+
+Provide a field:
+
+Section
+
+Example:
+
+[ CSE-A ]
+
+The value should be entered or selected by the user.
+
+IMPORTANT:
+Do NOT try to extract the Section from the Excel file.
+
+The user explicitly provides the Section.
+
+------------------------------------------
+STEP 4 — SELECT ANALYSIS DATE
+------------------------------------------
+
+The uploaded Excel may contain multiple sheets representing different attendance dates.
+
+For example:
+
+17-07-2026
+22-07-2026
+31-07-2026
+07-08-2026
+14-08-2026
+20-08-2026
+
+Detect these sheets automatically.
+
+Provide a date/sheet selection dropdown.
+
+Example:
+
+Analysis Date:
+[ 20-08-2026 ▼ ]
+
+The selected sheet should be used for the current attendance analysis.
+
+If possible, recognize date-like sheet names automatically.
+
+Do NOT hardcode the dates from the sample Excel.
+
+Future Excel files may contain completely different dates.
+
+------------------------------------------
+STEP 5 — ATTENDANCE RANGE
+------------------------------------------
+
+Provide ONLY these two analysis options:
+
+1. Below 65%
+
+2. 65% – 74%
+
+Do NOT add an Above 75% option.
+
+Do NOT add any other attendance ranges.
+
+The selected range must control:
+
+- Student-wise analysis
+- Subject-wise analysis
+- Counts
+- Statistics
+- Graphs
+- Exported Excel
+
+Example:
+
+Attendance Analysis:
+
+○ Below 65%
+
+○ 65% – 74%
+
+Only one range should be active at a time.
+
+Use clear visual indicators for the selected option.
+
+==================================================
+6. EXCEL DATA STRUCTURE
+==================================================
+
+The application must be designed according to the sample attendance Excel structure provided for this project.
+
+The sample contains columns similar to:
+
+SL
+REGD.NO
+NAME
+DS
+DBMSIS
+OOPTJ
+DLDES
+AI
+DMS-MTA
+DWAV
+Counseling
+TOTAL %
+
+IMPORTANT:
+
+The application must NOT hardcode these exact subjects.
+
+Different Excel files in the future may contain different subjects.
+
+The system must automatically detect subject columns.
+
+==================================================
+7. SUBJECT DETECTION
+==================================================
+
+Automatically identify actual subject columns.
+
+Exclude these non-subject columns:
+
+- SL
+- REGD.NO
+- NAME
+- Counseling
+- TOTAL %
+- Any other obvious metadata/non-subject columns
+
+IMPORTANT:
+
+Counseling is NEVER a subject for attendance analysis.
+
+TOTAL % is NEVER a subject for attendance analysis.
+
+Do not include either of them in:
+
+- Subject-wise analysis
+- Subject counts
+- Student subject lists
+- Graphs
+- Attendance range calculations
+
+The system should be flexible enough to recognize future subject columns automatically.
+
+==================================================
+8. ATTENDANCE VALUE HANDLING
+==================================================
+
+The sample Excel may contain attendance values represented as decimal ratios.
+
+For example:
+
+0.7941
+
+should be interpreted as:
+
+79.41%
+
+0.5581
+
+should be interpreted as:
+
+55.81%
+
+0.4242
+
+should be interpreted as:
+
+42.42%
+
+If the Excel contains values already represented as percentages, handle them correctly as well.
+
+The application must avoid incorrectly multiplying values that are already percentages.
+
+Create robust percentage normalization logic.
+
+Examples:
+
+0.5581 → 55.81%
+
+55.81 → 55.81%
+
+"55.81%" → 55.81%
+
+Blank/null/non-numeric values should not cause the application to crash.
+
+==================================================
+9. BELOW 65% ANALYSIS
+==================================================
+
+When the user selects:
+
+Below 65%
+
+The system must find every student whose attendance is below 65% in each valid subject.
+
+For each student, collect all subjects where:
+
+attendance < 65
+
+Example:
+
+Student:
+
+23A81A0501
+
+Subjects:
+
+DBMSIS (55.81%)
+OOPTJ (42.42%)
+DLDES (55.56%)
+AI (60.00%)
+
+Count:
+
+4
+
+==================================================
+10. 65%–74% ANALYSIS
+==================================================
+
+When the user selects:
+
+65% – 74%
+
+The system must find every student whose attendance is:
+
+attendance >= 65 AND attendance < 75
+
+In other words:
+
+65.00% through 74.99%
+
+Display the actual attendance percentage.
+
+Example:
+
+DS (69.41%)
+AI (70.00%)
+DWAV (74.00%)
+
+Count:
+
+3
+
+IMPORTANT:
+
+75% exactly must NOT be included in the 65%–74% range.
+
+==================================================
+11. PRIMARY OUTPUT TABLE
+==================================================
+
+The primary student-wise output table must follow this structure:
+
+For Below 65%:
+
+| REGD.NO | YEAR | SECTION | NAME | Subjects <65% (with %) | Count <65% |
+
+For 65%–74%:
+
+| REGD.NO | YEAR | SECTION | NAME | Subjects 65–74% (with %) | Count 65–74% |
+
+The column heading should dynamically change according to the selected range.
+
+==================================================
+12. YEAR AND SECTION IN OUTPUT
+==================================================
+
+The YEAR and SECTION must come from the values entered/selected by the user.
+
+They must NOT be extracted from the Excel.
+
+Example:
+
+Academic Year:
+2nd Year
+
+Section:
+CSE-A
+
+Then every exported result row should contain:
+
+REGD.NO | YEAR | SECTION | NAME | ...
+
+Example:
+
+23A81A0501 | 2nd Year | CSE-A | Student Name | DBMSIS (55.81%), AI (60%) | 2
+
+==================================================
+13. SUBJECT DISPLAY FORMAT
+==================================================
+
+Inside the Subjects column, display:
+
+Subject Shortcut (Attendance%)
+
+Example:
+
+DBMSIS (55.81%), OOPTJ (42.42%), AI (60.00%)
+
+Use consistent percentage formatting.
+
+Prefer two decimal places.
+
+If only one subject matches:
+
+AI (60.00%)
+
+If no subjects match, that student should not appear in the selected-range result table.
+
+==================================================
+14. STUDENT COUNT
+==================================================
+
+Display:
+
+Unique Students
+
+This is the number of unique students who have at least one subject in the selected attendance range.
+
+Example:
+
+If Student A has 3 low-attendance subjects:
+
+Unique Students = 1
+
+Do NOT count the same student multiple times.
+
+==================================================
+15. SUBJECT-WISE COUNT
+==================================================
+
+Calculate the number of students in the selected attendance range for every subject.
+
+Example:
+
+| Subject | Student Count |
+|---|---:|
+| DS | 5 |
+| DBMSIS | 13 |
+| OOPTJ | 17 |
+| DLDES | 11 |
+| AI | 9 |
+| DMS-MTA | 14 |
+| DWAV | 6 |
+
+These counts must be based on the selected attendance range.
+
+==================================================
+16. TOTAL SUBJECT-WISE CASES
+==================================================
+
+Calculate:
+
+Total Subject-wise Cases
+
+This is the total number of student-subject matches.
+
+Example:
+
+Student A has 3 matching subjects.
+Student B has 2 matching subjects.
+
+Total Subject-wise Cases = 5
+
+IMPORTANT:
+
+This is NOT the same as the number of unique students.
+
+Display both separately:
+
+Unique Students
+Total Subject-wise Cases
+
+==================================================
+17. TOTAL STUDENTS
+==================================================
+
+Display the total number of students analyzed from the selected sheet.
+
+Use unique registration numbers.
+
+Do not count duplicate registration numbers multiple times.
+
+==================================================
+18. TOTAL SUBJECTS
+==================================================
+
+Display the number of actual subject columns detected after excluding:
+
+- SL
+- REGD.NO
+- NAME
+- Counseling
+- TOTAL %
+
+==================================================
+19. SEARCH AND FILTER
+==================================================
+
+Add useful controls to the results table:
+
+- Search by registration number
+- Search by student name
+- Sort by count
+- Sort by registration number
+- Sort alphabetically by name
+
+Do not make the interface unnecessarily complicated.
+
+==================================================
+20. GRAPHS
+==================================================
+
+After analysis, automatically generate graphs.
+
+The graphs must update according to the selected attendance range.
+
+Required graphs:
+
+1. Subject-wise Student Count
+
+Example:
+
+Subject | Students in selected range
+
+Use a bar chart.
+
+2. Attendance Range Summary
+
+Show:
+
+- Unique Students
+- Total Subject-wise Cases
+
+3. Subject-wise Attendance Distribution
+
+Show how many students fall into the selected range for each subject.
+
+Charts should have:
+
+- Clear titles
+- Axis labels
+- Legends when required
+- Readable subject names
+- Responsive sizing
+
+Use a reliable charting library such as Recharts or Chart.js.
+
+==================================================
+21. REPORTS PAGE
+==================================================
+
+Create a Reports page where the user can review the current analysis before exporting.
+
+Show:
+
+- Analysis Date
+- Academic Year
+- Section
+- Selected Attendance Range
+- Total Students
+- Unique Students
+- Total Subjects
+- Total Subject-wise Cases
+- Subject-wise counts
+- Student-wise results
+
+Provide:
+
+Download Excel
+
+button.
+
+==================================================
+22. EXCEL EXPORT
+==================================================
+
+The application must generate a NEW analyzed Excel file.
+
+Do NOT simply download the original uploaded Excel.
+
+The exported file must contain the analyzed results.
+
+Recommended workbook structure:
+
+SHEET 1:
+Summary
+
+Include:
+
+- Analysis Date
+- Academic Year
+- Section
+- Selected Attendance Range
+- Total Students
+- Unique Students
+- Total Subjects
+- Total Subject-wise Cases
+
+SHEET 2:
+Student-wise Analysis
+
+Use the exact required structure:
+
+REGD.NO
+YEAR
+SECTION
+NAME
+Subjects <65% (with %)
+Count <65%
+
+OR:
+
+REGD.NO
+YEAR
+SECTION
+NAME
+Subjects 65–74% (with %)
+Count 65–74%
+
+depending on the selected range.
+
+SHEET 3:
+Subject-wise Analysis
+
+Columns:
+
+Subject
+Student Count
+
+SHEET 4:
+Detailed Analysis
+
+Include useful detailed student-subject attendance information used to produce the selected analysis.
+
+==================================================
+23. EXPORT FILE NAME
+==================================================
+
+This is mandatory.
+
+The downloaded Excel filename must automatically follow:
+
+Date-Year-Section.xlsx
+
+Example:
+
+20-08-2026-2nd-Year-CSE-A.xlsx
+
+Another example:
+
+14-08-2026-2nd-Year-CSE-B.xlsx
+
+Use the selected analysis date, entered Year, and entered Section.
+
+Sanitize invalid filename characters automatically.
+
+Do not use generic names such as:
+
+analysis.xlsx
+report.xlsx
+attendance.xlsx
+
+The filename must contain:
+
+Date + Year + Section
+
+==================================================
+24. EXPORT CONTENT
+==================================================
+
+The exported Excel must include the selected:
+
+Date
+Year
+Section
+Attendance Range
+
+The output should match the analysis displayed on the website.
+
+If the user selects:
+
+Below 65%
+
+the export should contain the Below 65% results.
+
+If the user selects:
+
+65%–74%
+
+the export should contain the 65%–74% results.
+
+==================================================
+25. DATA VALIDATION
+==================================================
+
+Before analysis, validate:
+
+- Excel file exists.
+- File type is supported.
+- At least one valid sheet exists.
+- Required student columns are available.
+- REGD.NO exists.
+- NAME exists.
+- At least one subject column exists.
+
+If validation fails, display a clear user-friendly message.
+
+Do NOT crash the application.
+
+Example:
+
+"REGD.NO column could not be found. Please upload an attendance Excel file with the required format."
+
+==================================================
+26. EMPTY / INVALID DATA
+==================================================
+
+Handle:
+
+- Empty cells
+- Missing attendance values
+- Duplicate students
+- Non-numeric values
+- Percentage strings
+- Decimal ratios
+- Blank sheets
+
+Gracefully.
+
+Do not display:
+
+NaN
+undefined
+null
+
+to the user.
+
+==================================================
+27. DUPLICATE STUDENTS
+==================================================
+
+Use REGD.NO as the primary student identifier.
+
+If duplicate rows exist:
+
+- Do not incorrectly count the student multiple times in Unique Students.
+- Handle duplicates consistently.
+- Do not silently create incorrect subject counts.
+
+If duplicate rows create ambiguity, show a warning to the user rather than producing misleading results.
+
+==================================================
+28. MULTIPLE SHEETS
+==================================================
+
+The application must support Excel files containing multiple attendance-date sheets.
+
+Do NOT assume there will always be six sheets.
+
+Do NOT hardcode:
+
+17-07-2026
+22-07-2026
+31-07-2026
+07-08-2026
+14-08-2026
+20-08-2026
+
+These are only examples from the sample file.
+
+Detect whatever sheets are present in the uploaded Excel.
+
+Allow the user to select the sheet/date to analyze.
+
+==================================================
+29. USER EXPERIENCE
+==================================================
+
+The interface should be professional and easy to use.
+
+Recommended flow:
+
+UPLOAD EXCEL
+      ↓
+SELECT YEAR
+      ↓
+SELECT SECTION
+      ↓
+SELECT DATE/SHEET
+      ↓
+SELECT ATTENDANCE RANGE
+      ↓
+ANALYZE
+      ↓
+VIEW SUMMARY
+      ↓
+VIEW TABLE
+      ↓
+VIEW GRAPHS
+      ↓
+DOWNLOAD EXCEL
+
+Show loading/progress feedback while processing large Excel files.
+
+Example:
+
+"Analyzing attendance..."
+
+After successful analysis:
+
+"Attendance analysis completed successfully."
+
+==================================================
+30. RESPONSIVE DESIGN
+==================================================
+
+The application must work properly on:
+
+- Desktop
+- Laptop
+- Tablet
+- Mobile
+
+Tables should be horizontally scrollable on small screens.
+
+Charts should resize responsively.
+
+Do not allow UI elements to overlap.
+
+==================================================
+31. VISUAL DESIGN
+==================================================
+
+Create a clean professional academic dashboard.
+
+Use:
+
+- Modern cards
+- Clear typography
+- Consistent spacing
+- Professional colors
+- Accessible contrast
+- Clear buttons
+- Subtle animations only where useful
+
+Do not overdesign the application.
+
+The focus should be on data analysis and usability.
+
+==================================================
+32. TECHNOLOGY
+==================================================
+
+Use a suitable modern frontend stack.
+
+Preferred:
+
+React + JavaScript/TypeScript
+
+For Excel processing:
+
+SheetJS / XLSX
+
+For charts:
+
+Recharts or Chart.js
+
+For export:
+
+XLSX
+
+All processing can happen locally in the application.
+
+No database is required for Version 1.
+
+==================================================
+33. PRIVACY
+==================================================
+
+Student information is potentially sensitive.
+
+Do not send uploaded student data to unnecessary external services.
+
+Process the Excel file locally in the application whenever possible.
+
+Do not store uploaded student information permanently.
+
+Do not log student names or registration numbers unnecessarily in browser/server logs.
+
+==================================================
+34. IMPORTANT — NO BACKEND DATABASE
+==================================================
+
+Do NOT implement:
+
+Supabase
+Firebase
+MongoDB
+PostgreSQL
+MySQL
+Any external database
+
+for Version 1.
+
+The application should work as:
+
+Upload Excel
+→ Process
+→ Analyze
+→ Display
+→ Export
+
+==================================================
+35. MARKS ANALYSIS — FUTURE FEATURE
+==================================================
+
+Do NOT implement Marks Analysis now.
+
+The project will later be expanded to include Marks Analysis after a proper marks Excel format is provided.
+
+For now:
+
+Attendance Analysis = IMPLEMENT
+
+Marks Analysis = FUTURE
+
+Do not create fake marks pages or placeholder analysis.
+
+==================================================
+36. FUTURE FEATURES — DO NOT IMPLEMENT NOW
+==================================================
+
+The following may be added later:
+
+- Marks Analysis
+- Combined Attendance + Marks Analysis
+- Supabase database
+- User login
+- Student profiles
+- Historical analysis storage
+- Advanced reports
+- Automated email reports
+
+Do not implement these in Version 1.
+
+==================================================
+37. SAMPLE EXCEL
+==================================================
+
+Use the uploaded sample Excel structure as a reference for development.
+
+The sample contains date-wise sheets and subject attendance columns.
+
+However, the implementation must be GENERIC.
+
+Do not hardcode:
+
+- Sample dates
+- Sample student names
+- Sample registration numbers
+- Sample subject names
+- Sample student counts
+
+The application must work with future Excel files following the same general structure.
+
+==================================================
+38. IMPORTANT OUTPUT REQUIREMENT
+==================================================
+
+The final output must be accurate.
+
+For every selected attendance range:
+
+1. Identify matching subjects for every student.
+2. Display the subject and exact percentage.
+3. Count matching subjects for each student.
+4. Calculate unique students.
+5. Calculate subject-wise student counts.
+6. Calculate total subject-wise cases.
+7. Generate graphs.
+8. Generate downloadable Excel.
+9. Use Date-Year-Section.xlsx as the filename.
+
+==================================================
+39. FINAL QUALITY CHECK
+==================================================
+
+Before considering the project complete, test the application with the provided sample Excel.
+
+Test:
+
+A. Below 65%
+
+B. 65%–74%
+
+Verify:
+
+- Correct students are identified.
+- Correct subjects are identified.
+- Counseling is excluded.
+- TOTAL % is excluded.
+- Percentages are correctly interpreted.
+- Counts are correct.
+- Unique student count is correct.
+- Total subject-wise case count is correct.
+- Subject-wise counts are correct.
+- Graphs match the table data.
+- Exported Excel matches the displayed results.
+- Year appears after REGD.NO.
+- Section appears after Year.
+- Date, Year and Section appear in the exported report.
+- Filename follows:
+  Date-Year-Section.xlsx
+
+Example:
+
+20-08-2026-2nd-Year-CSE-A.xlsx
+
+==================================================
+40. DO NOT BREAK EXISTING FUNCTIONALITY
+==================================================
+
+If this project is being created from an existing Replit project:
+
+- Inspect the existing project first.
+- Reuse existing components where appropriate.
+- Do not delete useful existing files without reason.
+- Do not introduce duplicate routing systems.
+- Do not introduce unnecessary dependencies.
+- Do not overwrite working functionality unnecessarily.
+
+If this is a new project, create the complete application from scratch.
+
+==================================================
+FINAL REQUIREMENT
+==================================================
+
+Build the application completely according to this specification.
+
+Do not stop after creating only the UI.
+
+The Excel upload, sheet detection, percentage processing, attendance filtering, student-wise analysis, subject-wise analysis, statistics, graphs, and Excel export must all be functional.
+
+The final result should be a professional, usable Student Attendance Analysis System ready to test with the provided Excel file.
+
+Do NOT implement Marks Analysis yet.
+Do NOT implement Supabase.
+Do NOT implement Google Maps.
+Do NOT implement any external database.
+
+Focus entirely on making Version 1 Attendance Analysis accurate and reliable.

@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "Student Attendance Analysis System"
+description = "A local-first academic dashboard that analyzes uploaded attendance workbooks by sheet, identifies at-risk student-subject matches, visualizes the results, and exports a structured Excel report without storing student data."
+version = "1.0.0"
+id = "artifacts/student-attendance-analysis"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 21089
+
+[services.development]
+run = "pnpm --filter @workspace/student-attendance-analysis run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/student-attendance-analysis", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/student-attendance-analysis/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "21089"
+BASE_PATH = "/"

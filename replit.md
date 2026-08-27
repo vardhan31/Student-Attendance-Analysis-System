@@ -1,44 +1,53 @@
-# [Project name]
+# Student Attendance Analysis System
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+A local-first React application that analyzes uploaded attendance workbooks and exports focused student-subject reports.
 
 ## Run & Operate
 
-- `pnpm --filter @workspace/api-server run dev` — run the API server (port 5000)
+- `pnpm --filter @workspace/student-attendance-analysis run dev` — run the web app
 - `pnpm run typecheck` — full typecheck across all packages
-- `pnpm run build` — typecheck + build all packages
-- `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
-- `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
-- Required env: `DATABASE_URL` — Postgres connection string
+- `pnpm --filter @workspace/student-attendance-analysis run typecheck` — typecheck the web app
+- `pnpm --filter @workspace/student-attendance-analysis run build` — build the web app
+
+The attendance workbook is parsed and held in browser memory only. No database, authentication, backend API, or persistent student data storage is used.
 
 ## Stack
 
 - pnpm workspaces, Node.js 24, TypeScript 5.9
-- API: Express 5
-- DB: PostgreSQL + Drizzle ORM
-- Validation: Zod (`zod/v4`), `drizzle-zod`
-- API codegen: Orval (from OpenAPI spec)
-- Build: esbuild (CJS bundle)
+- Frontend: React + Vite + Wouter
+- Workbook processing: SheetJS (`xlsx`)
+- Visualizations: Recharts
+- Icons and motion: Lucide React + Framer Motion
 
 ## Where things live
 
-_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
+- `artifacts/student-attendance-analysis/src/App.tsx` — application state, workbook parsing, analysis, charts, tables, and export
+- `artifacts/student-attendance-analysis/src/index.css` — visual theme and responsive layout rules
+- `artifacts/student-attendance-analysis/package.json` — web app dependencies
 
 ## Architecture decisions
 
-_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
+- Workbook data remains local to the browser to keep sensitive student information private.
+- Sheet names and subject columns are detected from each workbook rather than hardcoded.
+- Registration number is the stable student identity used for de-duplication and counts.
+- The selected range is the single source of truth for student matches, subject counts, charts, and exports.
 
 ## Product
 
-_Describe the high-level user-facing capabilities of this app once they exist._
+- Overview dashboard with empty and analyzed states
+- Analysis workspace with `.xlsx` drag-and-drop upload, sheet selection, academic context, threshold selection, warnings, search, sort, and responsive charts
+- Reports view with summary metadata, subject counts, student-wise results, and a four-sheet Excel export named from date, year, and section
 
 ## User preferences
 
-_Populate as you build — explicit user instructions worth remembering across sessions._
+- Display owner: A.N. Harshith Vardhan
+- Department: Computer Science and Engineering
 
 ## Gotchas
 
-_Populate as you build — sharp edges, "always run X before Y" rules._
+- The web workflow must provide `PORT` and `BASE_PATH`; do not run the Vite app from the workspace root.
+- Decimal ratios such as `0.5581`, numeric percentages such as `55.81`, and strings such as `55.81%` are normalized to the same percentage scale.
+- `Counseling` and `TOTAL %` must never be treated as subjects.
 
 ## Pointers
 
