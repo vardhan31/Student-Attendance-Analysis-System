@@ -1,0 +1,1 @@
+- [Browser PDF attendance handling](pdf-attendance-export.md) — keep PDF parsing and simple PDF export local when package firewall blocks PDF writer dependencies.

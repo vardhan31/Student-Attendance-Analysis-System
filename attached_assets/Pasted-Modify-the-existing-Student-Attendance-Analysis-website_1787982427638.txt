@@ -1,0 +1,411 @@
+Modify the existing Student Attendance Analysis website based on the following requirements.
+
+IMPORTANT:
+- Do NOT rebuild the website from scratch.
+- Preserve the existing design, layout, typography, colors, navigation, animations, and existing working functionality.
+- Modify only the required attendance-analysis functionality.
+- Do NOT add backend/database functionality at this stage.
+- Marks analysis is NOT required now. It will be added later when a marks format is provided.
+
+1. USER INFORMATION
+
+Keep the existing user information section:
+
+Name:
+A.N. Harshith Vardhan
+
+Department:
+Computer Science and Engineering
+
+Display these clearly in the application where the current user/project information is shown.
+
+2. FILE UPLOAD
+
+The attendance analysis must support BOTH:
+
+- Excel files (.xlsx, .xls)
+- PDF files (.pdf)
+
+Provide a clear upload interface allowing the user to upload either an Excel or PDF attendance file.
+
+The application must process both formats using the same attendance-analysis logic.
+
+3. IMPORTANT SUBJECT DETECTION RULE
+
+This is extremely important.
+
+When reading either Excel or PDF attendance data:
+
+- Identify the student information.
+- Identify the actual academic subject columns.
+- Analyze ONLY the actual subjects.
+
+DO NOT treat these as subjects:
+
+- Total
+- Counselling
+- Any overall/aggregate column
+- Any non-subject summary column
+
+If the uploaded file contains columns such as:
+
+Registration Number
+Student Name
+Subject 1
+Subject 2
+Subject 3
+...
+Total
+Counselling
+
+then only Subject 1, Subject 2, Subject 3, etc. should be analyzed.
+
+The Total and Counselling columns must be completely ignored.
+
+Do not include Total or Counselling in:
+- attendance analysis
+- subject counts
+- overall subject calculations
+- graphs
+- Excel reports
+- PDF reports
+
+The same rule must work for both Excel and PDF uploads.
+
+4. YEAR SELECTION
+
+In the current "Academic year" field, change the label to:
+
+Year
+
+Do NOT use "Academic year".
+
+Make Year a dropdown with exactly these options:
+
+- I
+- II
+- III
+- IV
+
+The selected value represents the student's year.
+
+5. SECTION INPUT
+
+Keep Section as an input field.
+
+The user must be able to type values such as:
+
+11
+19
+A
+B
+C
+
+Fix the current input problem where the cursor disappears after entering the first character.
+
+The user should be able to type a multi-character section normally without having to click the field after every character.
+
+6. REPORT DATE
+
+Add a proper date picker/calendar for the report date.
+
+The user should be able to select:
+
+- Day
+- Month
+- Year
+
+The selected date is the REPORT DATE.
+
+Do NOT automatically use the upload date.
+
+For example, if the user selects:
+
+22 July 2026
+
+the generated reports must use that date.
+
+7. ATTENDANCE RANGE
+
+Keep ONLY these two analysis options:
+
+A. Below 65%
+Description:
+Attendance strictly below 65%.
+
+B. 65% – 74%
+Description:
+65% inclusive and 75% exclusive.
+
+Do not add any additional attendance ranges.
+
+8. ANALYSIS LOGIC
+
+After the user uploads the Excel/PDF file and selects:
+
+- Year
+- Section
+- Report Date
+- Attendance Range
+
+the application should analyze the uploaded attendance data.
+
+For every student:
+
+- Check attendance subject by subject.
+- Identify subjects where the student's attendance falls within the selected range.
+- Do not analyze Total.
+- Do not analyze Counselling.
+- Do not treat any summary/aggregate column as a subject.
+
+9. REQUIRED ANALYSIS OUTPUT
+
+After analysis, display:
+
+A. Student count
+
+Show the total number of students matching the selected attendance condition.
+
+B. Subject-wise count
+
+For every actual subject, show how many students fall within the selected attendance range for that subject.
+
+Example:
+
+Subject | Students
+
+CS101 | 12
+CS102 | 8
+CS103 | 15
+
+Do not include Total or Counselling.
+
+C. Overall subject count
+
+Show the combined/overall count across the actual subjects only.
+
+The results must change according to the selected attendance range.
+
+For example:
+
+If "Below 65%" is selected, show only students/subject counts satisfying below 65%.
+
+If "65% – 74%" is selected, show only students/subject counts satisfying 65% inclusive and below 75%.
+
+10. GRAPH REPRESENTATION
+
+After analysis, display suitable graphs/charts.
+
+The graphs should clearly represent the subject-wise attendance-risk counts.
+
+For example:
+
+Subject-wise bar chart showing the number of students in the selected attendance range for each subject.
+
+The graph must:
+
+- Use actual subjects only.
+- Exclude Total.
+- Exclude Counselling.
+- Update when the attendance range changes.
+- Match the displayed numerical results.
+
+11. EXPORT OPTIONS
+
+After analysis, provide TWO export choices:
+
+- Download Excel Report
+- Download PDF Report
+
+The user should be able to choose either format.
+
+Both reports must contain the SAME analyzed information.
+
+12. EXCEL REPORT
+
+The generated Excel report should include the analyzed information currently displayed by the application, including:
+
+- Report date
+- Year
+- Section
+- Student count
+- Subject-wise student counts
+- Overall subject count
+- Relevant attendance analysis results
+
+Do NOT include:
+
+- Total
+- Counselling
+- Other non-subject aggregate columns
+
+The Excel report should be clean and professional.
+
+13. PDF REPORT
+
+Generate a PDF report containing the same information as the Excel report.
+
+The PDF should include:
+
+- Report date
+- Year
+- Section
+- Attendance range selected
+- Student count
+- Subject-wise counts
+- Overall subject count
+- Graph/chart representation where practical
+
+Again:
+
+DO NOT include Total.
+
+DO NOT include Counselling.
+
+Only actual academic subjects should appear.
+
+14. FILE NAME FORMAT
+
+Generated reports must automatically use:
+
+Date-Year-Section
+
+For example:
+
+22-07-2026-II-19.xlsx
+
+22-07-2026-II-19.pdf
+
+Use the selected report date, selected Year, and selected Section.
+
+Do not use the upload date.
+
+15. VALIDATION
+
+Before analysis, make sure:
+
+- A file has been uploaded.
+- The file is either Excel or PDF.
+- Year has been selected.
+- Section has been entered.
+- Report date has been selected.
+- Attendance range has been selected.
+
+If something is missing, show a clear user-friendly message.
+
+16. PDF PARSING
+
+For PDF attendance files:
+
+- Read the table structure carefully.
+- Detect student rows.
+- Detect actual subject columns.
+- Ignore Total.
+- Ignore Counselling.
+- Ignore other aggregate/non-subject columns.
+- Preserve the attendance values accurately.
+
+Do not assume that the PDF has exactly the same column positions as the Excel file. Detect the relevant subject columns from the uploaded document.
+
+17. EXCEL PARSING
+
+For Excel files:
+
+- Read the uploaded sheet containing attendance data.
+- Detect student information.
+- Detect actual subject columns.
+- Ignore Total.
+- Ignore Counselling.
+- Ignore other aggregate columns.
+- Use the actual subject attendance values for analysis.
+
+18. IMPORTANT EDGE CASE
+
+If a file contains:
+
+Registration Number | Student Name | Subject A | Subject B | Subject C | Total | Counselling
+
+the system must analyze only:
+
+Subject A
+Subject B
+Subject C
+
+and completely ignore:
+
+Total
+Counselling
+
+This must work consistently for both Excel and PDF.
+
+19. UI
+
+Keep the current interface style.
+
+The analysis configuration section should now effectively contain:
+
+Year *
+[ I / II / III / IV dropdown ]
+
+Section *
+[ text input ]
+
+Report date *
+[ calendar/date picker ]
+
+Attendance range
+[ Below 65% ]
+[ 65% – 74% ]
+
+[ Upload Excel/PDF ]
+[ Analyze ]
+
+After analysis:
+
+- Student count
+- Subject-wise count
+- Overall subject count
+- Graph
+- Download Excel
+- Download PDF
+
+20. DO NOT MODIFY
+
+Do NOT implement marks analysis now.
+
+Do NOT add Supabase/backend/database functionality.
+
+Do NOT add Google Maps.
+
+Do NOT change the existing overall website design.
+
+Do NOT remove existing working features unless absolutely necessary for this attendance-analysis modification.
+
+21. FINAL VERIFICATION
+
+After making the changes, test the application using an attendance file.
+
+Verify that:
+
+1. Excel upload works.
+2. PDF upload works.
+3. Year dropdown works with I, II, III, IV.
+4. Section accepts multi-character input normally.
+5. Calendar/date picker works.
+6. Selected date is used in the report.
+7. Below 65% analysis works.
+8. 65%–74% analysis works.
+9. Subject-wise analysis works.
+10. Total is ignored.
+11. Counselling is ignored.
+12. Student count is correct.
+13. Subject-wise counts are correct.
+14. Overall subject count is correct.
+15. Graph matches the analysis.
+16. Excel export works.
+17. PDF export works.
+18. Export filenames follow:
+    Date-Year-Section.xlsx
+    Date-Year-Section.pdf
+
+Do not make unrelated changes.

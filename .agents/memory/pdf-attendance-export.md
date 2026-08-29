@@ -1,0 +1,10 @@
+---
+name: Browser PDF attendance handling
+description: The attendance app keeps PDF parsing local and uses a small in-browser PDF writer for exports.
+---
+
+The project environment may reject otherwise standard PDF-export packages at the package firewall, so browser-side PDF reports can be generated without a third-party writer when the report only needs text and simple vector chart bars.
+
+**Why:** A blocked package download should not force backend processing or external services into this local-first app.
+
+**How to apply:** Keep PDF input extraction in pdfjs-dist and preserve the local export path unless the product requirements expand to complex typography, images, or pagination.
