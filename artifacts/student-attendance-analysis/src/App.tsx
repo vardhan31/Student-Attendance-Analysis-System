@@ -7,10 +7,12 @@ import { BarChart, Bar, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer,
 import { AlertTriangle, ArrowDownUp, BarChart3, BookOpen, CalendarDays, Check, ChevronDown, CircleHelp, Download, FileDown, FileSpreadsheet, FileText, Files, Filter, LayoutDashboard, Loader2, Menu, RefreshCw, Search, ShieldCheck, SlidersHorizontal, UploadCloud, X } from "lucide-react";
 import * as XLSX from "xlsx";
 import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf.mjs";
+import pdfWorkerUrl from "pdfjs-dist/legacy/build/pdf.worker.min.mjs?url";
 import { Link, Route, Switch, useLocation, Router as WouterRouter } from "wouter";
 import NotFound from "@/pages/not-found";
 
 const queryClient = new QueryClient();
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
 type AttendanceRange = "below65" | "65to74";
 type AttendanceRow = { registrationNumber: string; name: string; values: Record<string, number | null> };
