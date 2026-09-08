@@ -1,0 +1,313 @@
+STOP adding more UI changes or report-format changes.
+
+The PDF upload STILL produces this exact error:
+
+"No attendance table was detected in this PDF. Please upload a PDF with registration number, student name, and subject attendance columns."
+
+The previous changes have NOT fixed the actual PDF parsing problem.
+
+I need you to debug and fix the EXISTING PDF PARSER at code level.
+
+==================================================
+1. FIND THE EXACT SOURCE OF THIS ERROR
+==================================================
+
+Search the entire codebase for the exact string:
+
+"No attendance table was detected in this PDF"
+
+Find the function/component that generates this error.
+
+Trace backwards from that error and identify:
+- which PDF parsing function is called
+- what data it receives
+- what condition causes the parser to return "no attendance table"
+- why the provided attendance PDF fails that condition
+
+DO NOT simply change the error message.
+
+DO NOT add another UI fallback.
+
+FIX THE ACTUAL CONDITION/PARSER THAT IS FAILING.
+
+==================================================
+2. ADD TEMPORARY DEBUGGING
+==================================================
+
+Before changing the parser, temporarily log:
+
+PDF page count
+
+For every page:
+- number of text items extracted
+- first 30–50 extracted text items
+- their text values
+- their X/Y coordinates where available
+
+Also log:
+
+- detected registration-number candidates
+- detected student-name candidates
+- detected percentage values
+- detected header candidates
+- detected subject candidates
+- final parsed student count
+
+This is required because the parser is currently returning "no attendance table" even though the PDF visibly contains attendance records.
+
+DO NOT GUESS.
+
+Use the actual extracted PDF.js data to determine why detection fails.
+
+==================================================
+3. DO NOT DEPEND ON A VISUAL TABLE BEING EXTRACTED AS ONE STRING
+==================================================
+
+PDF.js may return the visual table as many independent text fragments.
+
+Therefore do NOT require something like:
+
+"REGD.NO NAME SUBJECT1 SUBJECT2 SUBJECT3..."
+
+to appear as one extracted string.
+
+Instead use PDF text items and their coordinates.
+
+Reconstruct the visual rows using Y-coordinate proximity.
+
+Use X-coordinate positions to associate values with the appropriate columns where possible.
+
+==================================================
+4. REGISTRATION NUMBER MUST BE THE PRIMARY ROW ANCHOR
+==================================================
+
+The parser should identify student rows primarily using registration-number patterns.
+
+A new registration number indicates the beginning of a new student record.
+
+Do NOT require the complete header to be present before accepting student rows.
+
+Once registration-number candidates are found:
+
+Registration Number
++
+following student-name text
++
+attendance percentage values
+
+should be assembled into a student record.
+
+==================================================
+5. MULTI-PAGE PDF
+==================================================
+
+Treat the PDF as ONE attendance document.
+
+The PDF may contain:
+
+Page 1:
+Header + student rows
+
+Page 2:
+Continuation student rows
+
+Page 3:
+Continuation student rows
+
+Do NOT treat pages as sheets.
+
+Do NOT require the header to repeat on every page.
+
+Detect the table structure from the first relevant page and continue the same structure through subsequent pages.
+
+==================================================
+6. DYNAMIC SUBJECT DETECTION
+==================================================
+
+IMPORTANT:
+
+The sample PDF I provided is ONLY a FORMAT REFERENCE.
+
+DO NOT hardcode its subjects.
+
+Do NOT hardcode:
+
+DS
+DBMSIS
+OOPTJ
+DLDES
+AI
+DMS-MTA
+DWAV
+
+Another uploaded attendance file may contain completely different subjects.
+
+Detect the subject names from the uploaded document dynamically.
+
+The parser should identify:
+- actual subject headers
+- their corresponding attendance percentage columns
+
+Do NOT use a fixed subject list.
+
+==================================================
+7. EXCLUDE NON-SUBJECT COLUMNS
+==================================================
+
+Regardless of the uploaded file, exclude obvious non-subject fields:
+
+- Total
+- TOTAL
+- TOTAL %
+- Counselling
+- COUNSELLING
+- SL
+- Registration Number
+- Student Name
+- other aggregate/metadata columns
+
+Only actual academic subjects should enter the analysis.
+
+==================================================
+8. DO NOT REJECT THE PDF BECAUSE THE HEADER DETECTOR FAILS
+==================================================
+
+This is the most important correction.
+
+The parser currently appears to do something similar to:
+
+if (!headerDetected) {
+    return "No attendance table was detected";
+}
+
+Do NOT use header detection as the only validation mechanism.
+
+If the parser can identify valid student records containing:
+- registration number
+- student name
+- attendance percentage data
+
+then the PDF should be considered successfully parsed even if the visual header was fragmented by PDF.js.
+
+Header detection should help map columns, but it must NOT be the sole reason for rejecting the entire PDF.
+
+==================================================
+9. VALID PDF DETECTION
+==================================================
+
+A PDF should be accepted when enough evidence exists that it is an attendance report.
+
+For example:
+- multiple registration numbers detected
+- student names detected
+- multiple percentage values detected
+
+If these are present, continue parsing.
+
+Only show "No attendance table was detected" when there is genuinely no recognizable attendance/student data.
+
+==================================================
+10. KEEP EXCEL WORKING
+==================================================
+
+Do NOT modify the working Excel parser unnecessarily.
+
+Excel functionality must continue to work exactly as before.
+
+Excel:
+- multiple sheets → sheet selection
+- single sheet → direct analysis
+
+PDF:
+- no sheet selection
+- complete PDF treated as one document
+
+==================================================
+11. DO NOT TOUCH REPORT GENERATION YET
+==================================================
+
+Do NOT modify:
+- PDF report layout
+- graph
+- Excel export
+- student-wise report table
+- report colors
+
+until PDF INPUT PARSING is actually working.
+
+The current priority is:
+
+PDF Upload
+→ PDF Parsing
+→ Successfully detect attendance data
+→ Continue to Year/Section/Date/Range configuration
+
+==================================================
+12. TEST WITH THE ACTUAL PDF
+==================================================
+
+Use the actual sample attendance PDF provided for this project.
+
+Do NOT create fake/mock attendance data.
+
+Do NOT hardcode the sample students.
+
+Do NOT hardcode the sample subject names.
+
+The parser must extract the real data from the actual PDF.
+
+Verify:
+
+- PDF loads
+- PDF.js worker works
+- all PDF pages are processed
+- registration numbers are detected
+- student names are detected
+- percentage values are detected
+- table structure is reconstructed
+- students are combined across pages
+- Total is excluded
+- Counselling is excluded
+- actual subjects are detected dynamically
+- no "No attendance table was detected" error occurs
+- the application proceeds to the attendance configuration/analysis step
+
+==================================================
+13. IMPORTANT DEBUGGING REQUIREMENT
+==================================================
+
+If the parser still fails:
+
+DO NOT tell me "the PDF format may be unsupported."
+
+Instead inspect the actual extracted PDF.js text items and determine exactly which assumption is failing.
+
+Then fix that assumption.
+
+Do not mark the task complete until the provided attendance PDF successfully reaches the analysis configuration step.
+
+==================================================
+14. AFTER FIXING
+==================================================
+
+Once confirmed working:
+
+Remove excessive temporary console logging.
+
+Keep only useful production error handling.
+
+Do not change unrelated application functionality.
+
+FINAL SUCCESS CONDITION:
+
+Uploading the provided attendance PDF must NOT show:
+
+"No attendance table was detected in this PDF."
+
+It must successfully parse the attendance records and allow the user to continue with:
+
+Year
+→ Section
+→ Report Date
+→ Attendance Range
+→ Analyze

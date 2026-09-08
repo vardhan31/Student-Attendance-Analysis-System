@@ -119,7 +119,7 @@ type PdfHeaderMapping = {
 function groupPdfLines(items: PdfCell[]): PdfLine[] {
   const lines: PdfLine[] = [];
   items.forEach((item) => {
-    const line = lines.find((candidate) => Math.abs(candidate.y - item.y) <= 3);
+    const line = lines.find((candidate) => Math.abs(candidate.y - item.y) <= 4);
     if (line) line.items.push(item);
     else lines.push({ y: item.y, items: [item] });
   });
@@ -145,11 +145,26 @@ function findPdfHeaderCell(line: PdfLine, pattern: RegExp): PdfCell | undefined 
   return undefined;
 }
 
+function isPdfRegistrationCandidate(value: unknown): boolean {
+  const text = safeText(value).replace(/\s+/g, "");
+  if (parseAttendance(text) !== null || text.length < 4) return false;
+  return /^[A-Z0-9./-]+$/i.test(text) && /\d/.test(text) && /[A-Z]/i.test(text);
+}
+
 function findPdfHeaderMapping(lines: PdfLine[]): PdfHeaderMapping | null {
-  const headerLine = lines.find((line) => {
+  const completeHeaderLine = lines.find((line) => {
     const text = normalizeHeader(line.items.map((item) => item.text).join(" "));
     return /(REGD|REGISTRATION|REG NO|ROLL NO)/.test(text) && /(NAME|STUDENT NAME)/.test(text);
   });
+  let headerLine = completeHeaderLine;
+  if (!headerLine) {
+    const registrationLine = lines.find((line) => /(REGD|REGISTRATION|REG NO|ROLL NO)/.test(normalizeHeader(line.items.map((item) => item.text).join(" "))));
+    const nameLine = lines.find((line) => /(NAME|STUDENT NAME)/.test(normalizeHeader(line.items.map((item) => item.text).join(" "))));
+    if (registrationLine && nameLine && Math.abs(registrationLine.y - nameLine.y) <= 36) {
+      const related = lines.filter((line) => Math.abs(line.y - Math.max(registrationLine.y, nameLine.y)) <= 36);
+      headerLine = { y: Math.max(...related.map((line) => line.y)), items: related.flatMap((line) => line.items).sort((a, b) => a.x - b.x) };
+    }
+  }
   if (!headerLine) return null;
   const registration = findPdfHeaderCell(headerLine, /(REGD|REGISTRATION|REG NO|ROLL NO)/);
   const name = findPdfHeaderCell(headerLine, /^(NAME|STUDENT NAME)$/);
@@ -220,6 +235,37 @@ function parsePdfRows(lines: PdfLine[], mapping: PdfHeaderMapping, pageName: str
   return { rows, duplicateRegs };
 }
 
+function parsePdfRowsFromAnchors(lines: PdfLine[], serialOffset: number): { rows: AttendanceRow[]; percentageCount: number } {
+  const rows: AttendanceRow[] = [];
+  let lastRow: AttendanceRow | null = null;
+  let lastRowY = Number.POSITIVE_INFINITY;
+  let percentageCount = 0;
+  lines.forEach((line) => {
+    const registrationCell = line.items.find((item) => isPdfRegistrationCandidate(item.text));
+    if (!registrationCell) {
+      const continuation = line.items.filter((item) => item.x > (lastRow ? 0 : Number.POSITIVE_INFINITY) && !isPdfRegistrationCandidate(item.text) && parseAttendance(item.text) === null).map((item) => item.text).join(" ").trim();
+      if (lastRow && continuation && lastRowY - line.y <= 32 && !looksLikeMetadata(continuation)) lastRow.name = `${lastRow.name} ${continuation}`.replace(/\s+/g, " ").trim();
+      return;
+    }
+    const numericItems = line.items.filter((item) => item.x > registrationCell.x && parseAttendance(item.text) !== null);
+    if (!numericItems.length) return;
+    const firstNumericX = numericItems[0].x;
+    const name = line.items.filter((item) => item !== registrationCell && item.x > registrationCell.x && item.x < firstNumericX && parseAttendance(item.text) === null).map((item) => item.text).join(" ").trim();
+    if (!name || looksLikeMetadata(name)) return;
+    const values: Record<string, number | null> = {};
+    numericItems.forEach((item, index) => { values[`Subject ${index + 1}`] = parseAttendance(item.text); });
+    percentageCount += numericItems.length;
+    lastRow = { serialNumber: String(serialOffset + rows.length + 1), registrationNumber: safeText(registrationCell.text), name, values };
+    lastRowY = line.y;
+    rows.push(lastRow);
+  });
+  return { rows, percentageCount };
+}
+
+function debugPdf(label: string, payload: unknown): void {
+  if (import.meta.env.DEV && typeof window !== "undefined" && new URLSearchParams(window.location.search).has("debugPdf")) console.debug(`[attendance-pdf] ${label}`, payload);
+}
+
 async function readPdf(file: File): Promise<ParseResult> {
   const data = new Uint8Array(await file.arrayBuffer());
   const pdf = await pdfjsLib.getDocument({ data, useWorkerFetch: false, isEvalSupported: false }).promise;
@@ -230,6 +276,8 @@ async function readPdf(file: File): Promise<ParseResult> {
   let mapping: PdfHeaderMapping | null = null;
   let headerFound = false;
   const duplicateRegs = new Set<string>();
+  let fallbackOffset = 0;
+  debugPdf("document", { pages: pdf.numPages, fileName: file.name });
   for (let index = 0; index < pdf.numPages; index += 1) {
     const page = await pdf.getPage(index + 1);
     const content = await page.getTextContent();
@@ -237,6 +285,7 @@ async function readPdf(file: File): Promise<ParseResult> {
       .filter((item) => typeof item.str === "string" && item.str.trim() && Array.isArray(item.transform))
       .map((item) => ({ text: safeText(item.str), x: item.transform?.[4] ?? 0, y: item.transform?.[5] ?? 0, width: item.width ?? 0 }));
     const lines = groupPdfLines(items);
+    debugPdf(`page ${index + 1}`, { itemCount: items.length, items: items.slice(0, 50).map((item) => ({ text: item.text, x: item.x, y: item.y })), registrationCandidates: items.filter((item) => isPdfRegistrationCandidate(item.text)).map((item) => item.text), percentageValues: items.filter((item) => parseAttendance(item.text) !== null).map((item) => item.text) });
     const detectedMapping = findPdfHeaderMapping(lines);
     if (detectedMapping) {
       if (mapping && !samePdfSubjects(mapping, detectedMapping)) {
@@ -246,15 +295,17 @@ async function readPdf(file: File): Promise<ParseResult> {
       mapping = detectedMapping;
       headerFound = true;
     }
-    if (!mapping) continue;
-    const parsed = parsePdfRows(lines, mapping, `Page ${index + 1}`);
+    const parsed = mapping?.subjects.length ? parsePdfRows(lines, mapping, `Page ${index + 1}`) : parsePdfRowsFromAnchors(lines, fallbackOffset);
     rows[PDF_DOCUMENT_KEY].push(...parsed.rows);
-    parsed.duplicateRegs.forEach((registrationNumber) => duplicateRegs.add(registrationNumber));
-    subjects[PDF_DOCUMENT_KEY] = mapping.subjects.map((item) => safeText(item.text)).filter(Boolean);
+    if ("duplicateRegs" in parsed) parsed.duplicateRegs.forEach((registrationNumber) => duplicateRegs.add(registrationNumber));
+    if (mapping?.subjects.length) subjects[PDF_DOCUMENT_KEY] = mapping.subjects.map((item) => safeText(item.text)).filter(Boolean);
+    else if (!subjects[PDF_DOCUMENT_KEY].length && parsed.rows.length) subjects[PDF_DOCUMENT_KEY] = Object.keys(parsed.rows[0].values);
+    fallbackOffset += parsed.rows.length;
   }
   if (!headerFound) warnings.push("The PDF did not contain a recognizable registration number, student name, and subject header.");
   if (mapping && !mapping.subjects.length) warnings.push("The PDF header was found, but no numeric subject attendance columns were detected.");
   if (duplicateRegs.size) warnings.push("Duplicate registration numbers were found across the PDF. The first record is used in analysis.");
+  debugPdf("final", { headerFound, students: rows[PDF_DOCUMENT_KEY].length, subjects: subjects[PDF_DOCUMENT_KEY] });
   if (!rows[PDF_DOCUMENT_KEY].length) throw new Error("No attendance table was detected in this PDF. Please upload a PDF with registration number, student name, and subject attendance columns.");
   return { workbook: { fileName: file.name, fileType: "pdf", sheets: [], activeSheet: PDF_DOCUMENT_KEY }, rows, subjects, warnings };
 }
