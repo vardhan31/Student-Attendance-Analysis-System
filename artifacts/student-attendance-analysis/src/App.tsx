@@ -151,6 +151,28 @@ function isPdfRegistrationCandidate(value: unknown): boolean {
   return /^[A-Z0-9./-]+$/i.test(text) && /\d/.test(text) && /[A-Z]/i.test(text);
 }
 
+function isPdfCourseCode(value: unknown): boolean {
+  const text = safeText(value).replace(/\s+/g, "");
+  return text.length >= 4 && /^[A-Z0-9-]+$/i.test(text) && /\d/.test(text) && /[A-Z]/i.test(text) && (/^\d/.test(text) || /\d$/.test(text));
+}
+
+function clusterPdfColumnXs(values: number[]): number[] {
+  const sorted = [...values].sort((a, b) => a - b);
+  const clusters: number[][] = [];
+  sorted.forEach((value) => {
+    const current = clusters[clusters.length - 1];
+    if (current && Math.abs(value - current[current.length - 1]) <= 8) current.push(value);
+    else clusters.push([value]);
+  });
+  return clusters.map((cluster) => cluster.reduce((sum, value) => sum + value, 0) / cluster.length);
+}
+
+function pdfSubjectLabel(cells: PdfCell[]): string {
+  const fragments = cells.map((cell) => safeText(cell.text)).filter((text) => text && !/^\d+(?:\.\d+)?%?$/.test(text));
+  const subjectFragments = fragments.filter((text) => !isPdfCourseCode(text));
+  return (subjectFragments.length ? subjectFragments : fragments).join(" ").replace(/\s+/g, " ").trim();
+}
+
 function findPdfHeaderMapping(lines: PdfLine[]): PdfHeaderMapping | null {
   const completeHeaderLine = lines.find((line) => {
     const text = normalizeHeader(line.items.map((item) => item.text).join(" "));
@@ -162,22 +184,29 @@ function findPdfHeaderMapping(lines: PdfLine[]): PdfHeaderMapping | null {
     const nameLine = lines.find((line) => /(NAME|STUDENT NAME)/.test(normalizeHeader(line.items.map((item) => item.text).join(" "))));
     if (registrationLine && nameLine && Math.abs(registrationLine.y - nameLine.y) <= 36) {
       const related = lines.filter((line) => Math.abs(line.y - Math.max(registrationLine.y, nameLine.y)) <= 36);
-      headerLine = { y: Math.max(...related.map((line) => line.y)), items: related.flatMap((line) => line.items).sort((a, b) => a.x - b.x) };
+      headerLine = { y: Math.min(...related.map((line) => line.y)), items: related.flatMap((line) => line.items).sort((a, b) => a.x - b.x) };
     }
   }
   if (!headerLine) return null;
+  const headerAnchorY = headerLine.y;
+  const headerRegion = lines.filter((line) => line.y >= headerAnchorY - 36 && line.y <= headerAnchorY + 36);
+  const headerItems = headerRegion.flatMap((line) => line.items).sort((a, b) => a.x - b.x || b.y - a.y);
+  if (headerItems.length) headerLine = { y: Math.min(...headerRegion.map((line) => line.y)), items: headerItems };
   const registration = findPdfHeaderCell(headerLine, /(REGD|REGISTRATION|REG NO|ROLL NO)/);
   const name = findPdfHeaderCell(headerLine, /^(NAME|STUDENT NAME)$/);
   const serial = findPdfHeaderCell(headerLine, /^(SL|S NO|SERIAL)$/);
   if (!registration || !name) return null;
   const dataLines = lines.filter((line) => line.y < headerLine.y && !/(REGD|REGISTRATION|REG NO|ROLL NO)/.test(normalizeHeader(line.items.map((item) => item.text).join(" "))));
-  const subjects = headerLine.items
-    .filter((item) => item !== registration && item !== name && !looksLikeMetadata(item.text))
-    .filter((item) => dataLines.some((line) => {
-      const cell = pdfColumnMatch(line, item.x);
-      return cell && parseAttendance(cell.text) !== null;
-    }));
-  return { headerY: headerLine.y, serial, registration, name, subjects: Array.from(new Map(subjects.map((item) => [safeText(item.text), item])).values()) };
+  const numericColumnXs = clusterPdfColumnXs(dataLines
+    .flatMap((line) => line.items)
+    .filter((item) => item.x > name.x && parseAttendance(item.text) !== null)
+    .map((item) => item.x));
+  const subjects = numericColumnXs.map((x) => {
+    const cells = headerItems.filter((item) => Math.abs(item.x - x) <= 14);
+    const label = pdfSubjectLabel(cells);
+    return label ? { text: label, x, y: headerLine.y, width: cells.reduce((max, cell) => Math.max(max, cell.width), 0) } : null;
+  }).filter((item): item is PdfCell => item !== null && !looksLikeMetadata(item.text));
+  return { headerY: headerLine.y, serial, registration, name, subjects: Array.from(new Map(subjects.map((item) => [normalizeHeader(item.text), item])).values()) };
 }
 
 function samePdfSubjects(first: PdfHeaderMapping, next: PdfHeaderMapping): boolean {

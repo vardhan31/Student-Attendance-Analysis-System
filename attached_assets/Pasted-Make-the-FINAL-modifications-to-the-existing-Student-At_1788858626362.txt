@@ -1,0 +1,962 @@
+Make the FINAL modifications to the existing Student Attendance Analysis website.
+
+IMPORTANT:
+Do NOT rebuild the application from scratch.
+Do NOT change unrelated functionality.
+Do NOT add Supabase, database, backend, authentication, or marks analysis.
+Marks analysis will be added later.
+
+Use the existing application and modify only the required functionality described below.
+
+The actual attendance PDF provided for testing is:
+
+Sec-19.pdf
+
+This PDF is a FORMAT REFERENCE for understanding the attendance report structure.
+It is NOT a fixed subject schema.
+
+==================================================
+1. VERY IMPORTANT: PDF SAMPLE IS ONLY A FORMAT
+==================================================
+
+The provided Sec-19.pdf contains a 3-page attendance report.
+
+Page 1 contains:
+- Institution information
+- Year/semester/section
+- Attendance period
+- Table header
+- Student attendance rows
+
+Pages 2 and 3 continue the same student attendance table.
+
+The PDF contains registration numbers, student names, subject attendance percentages, Counselling, and TOTAL.
+
+Use this file to understand the STRUCTURE of the PDF.
+
+DO NOT hardcode:
+- subject names
+- student names
+- student count
+- year
+- section
+- attendance percentages
+- page count
+
+The subjects can change in future uploaded files.
+
+For every new Excel/PDF file, dynamically detect the actual subjects present in that file.
+
+==================================================
+2. PDF UPLOAD ERROR — FIX THE ROOT CAUSE
+==================================================
+
+The application currently shows:
+
+"No attendance table was detected in this PDF. Please upload a PDF with registration number, student name, and subject attendance columns."
+
+This error is still appearing for the provided Sec-19.pdf.
+
+FIX THE ACTUAL PDF PARSING LOGIC.
+
+Do NOT simply:
+- change the error message
+- hide the error
+- create a mock dataset
+- hardcode the sample PDF
+- add a fake fallback dataset
+
+Find the exact function/condition responsible for this error and fix it.
+
+Search the codebase for:
+
+"No attendance table was detected in this PDF"
+
+Trace the complete parsing flow and determine why Sec-19.pdf is being rejected.
+
+==================================================
+3. PDF.JS / PDF EXTRACTION
+==================================================
+
+PDF text extraction may return the table as separate text fragments rather than one complete table string.
+
+Do NOT require this exact type of string:
+
+"SL REGD.NO NAME SUBJECT1 SUBJECT2 SUBJECT3..."
+
+to exist as one extracted text item.
+
+Use PDF text items and their coordinates where necessary.
+
+Use:
+- text content
+- X coordinates
+- Y coordinates
+- visual row reconstruction
+- registration-number detection
+- percentage detection
+- header reconstruction
+
+The PDF parser must reconstruct the table from the actual PDF structure.
+
+Also ensure PDF.js worker configuration is correct.
+
+The application must NOT show:
+
+"No 'GlobalWorkerOptions.workerSrc' specified."
+
+==================================================
+4. DETECT THE TABLE HEADER DYNAMICALLY
+==================================================
+
+The first page of the sample PDF has a header similar to:
+
+SL
+REGD.NO
+NAME
+DS
+25CS201
+DBMSIS
+25CS203
+OOPTJ
+25CS204
+DLDES
+25CS205
+AI
+25CS301
+DMS-MTA
+25MT205
+DWAV
+26CS202
+Counselling
+OC223
+TOTAL
+%
+
+The important point is:
+
+Subject name and course code can appear as separate lines/text fragments.
+
+For example:
+
+DS
+25CS201
+
+means:
+
+Subject = DS
+Course Code = 25CS201
+
+Do NOT treat the course code as a separate subject.
+
+The same logic must work for any future subject/course code combination.
+
+==================================================
+5. DYNAMIC SUBJECT DETECTION
+==================================================
+
+THIS IS A CORE REQUIREMENT.
+
+Do NOT hardcode any subject names.
+
+Do NOT hardcode the subjects from Sec-19.pdf.
+
+The application must determine the actual academic subjects from the uploaded file.
+
+Example:
+
+If uploaded file contains:
+
+DS
+DBMS
+AI
+Python
+
+then analyze those subjects.
+
+If another file contains:
+
+Java
+Cloud Computing
+Web Technologies
+Machine Learning
+Computer Networks
+
+then analyze those subjects.
+
+If another file contains completely different subjects, analyze those subjects.
+
+The application must work without code modification.
+
+Never assume a fixed number of subjects.
+
+==================================================
+6. COUNSELLING AND TOTAL MUST ALWAYS BE EXCLUDED
+==================================================
+
+This rule is FIXED for BOTH Excel and PDF.
+
+The following must NEVER be analyzed:
+
+- Counselling
+- Counseling
+- COUNSELLING
+- COUNSELING
+- Total
+- TOTAL
+- TOTAL %
+- aggregate/summary columns
+
+They must NOT appear in:
+- attendance range analysis
+- subject-wise counts
+- graph
+- student-wise low-attendance analysis
+- Excel analysis output
+- PDF analysis output
+
+They may be recognized during parsing so the system can understand the table boundaries, but they must be excluded from the actual analysis.
+
+The actual academic subjects must be determined dynamically.
+
+==================================================
+7. PDF STUDENT ROW DETECTION
+==================================================
+
+Use Registration Number as a strong row anchor.
+
+A student record contains:
+
+Registration Number
++
+Student Name
++
+attendance percentages
+
+The parser must detect student rows even when the PDF table header is fragmented.
+
+Do NOT require the entire header to be detected before processing student rows.
+
+If multiple valid registration numbers and student records are found, the PDF should be considered a valid attendance document.
+
+==================================================
+8. MULTI-PAGE PDF
+==================================================
+
+Treat the entire PDF as ONE attendance document.
+
+The sample PDF contains 3 pages.
+
+Page 1:
+Header + student records
+
+Page 2:
+Continuation records
+
+Page 3:
+Continuation records
+
+Do NOT treat PDF pages as Excel sheets.
+
+Do NOT require the table header to appear on every page.
+
+Once the table structure is identified from page 1:
+- reuse the structure on subsequent pages
+- detect continuation rows
+- combine all rows into one dataset
+
+The sample PDF reaches student serial number 59.
+
+Do NOT hardcode 59.
+
+The uploaded document determines the actual number of students.
+
+==================================================
+9. MULTI-LINE STUDENT NAMES
+==================================================
+
+Some student names may wrap onto multiple lines.
+
+For example, in the sample PDF:
+
+YELPULA VENKATA SAI HARSHAVARDHAN
+REDDY
+
+must be interpreted as one student:
+
+YELPULA VENKATA SAI HARSHAVARDHAN REDDY
+
+Do not create a separate student for the continuation line.
+
+Use the registration number as the beginning of a new student record.
+
+==================================================
+10. PDF PARSING VALIDATION
+==================================================
+
+Do NOT use this logic:
+
+if (!headerDetected) {
+    return "No attendance table was detected";
+}
+
+Header detection alone must NOT determine whether the PDF is valid.
+
+A PDF should be accepted if the parser can identify sufficient evidence such as:
+
+- registration numbers
+- student names
+- attendance percentages
+- recognizable attendance table structure
+
+Only reject the PDF if it genuinely contains no recognizable attendance records.
+
+==================================================
+11. EXCEL FUNCTIONALITY
+==================================================
+
+Keep existing Excel functionality.
+
+If Excel has multiple sheets:
+
+Upload Excel
+→ Show sheet selection
+→ User selects sheet
+→ Continue
+
+If Excel has only one sheet:
+
+Upload Excel
+→ Automatically use that sheet
+→ Do NOT show unnecessary sheet selection
+
+Detect actual subjects dynamically from the selected sheet.
+
+Always exclude:
+- Counselling
+- Counseling
+- Total
+- TOTAL
+- aggregate/non-subject metadata
+
+==================================================
+12. PDF WORKFLOW
+==================================================
+
+PDF must NOT have sheet selection.
+
+Workflow:
+
+Upload PDF
+↓
+Parse complete PDF
+↓
+Detect students + actual subjects
+↓
+Year
+↓
+Section
+↓
+Report Date
+↓
+Attendance Range
+↓
+Analyze
+
+==================================================
+13. YEAR FIELD
+==================================================
+
+Change the current:
+
+"Academic year"
+
+field to:
+
+"Year"
+
+Use a dropdown containing ONLY:
+
+I
+II
+III
+IV
+
+The selected year must be used throughout the application and reports.
+
+==================================================
+14. SECTION INPUT
+==================================================
+
+Keep Section as a text input.
+
+Fix the current cursor/focus problem.
+
+The user must be able to type:
+
+19
+
+or
+
+11
+
+continuously.
+
+Typing the first character must NOT cause the input to lose focus.
+
+The user should NOT have to click the input again after every character.
+
+The selected section must appear in:
+- analysis screen
+- PDF report
+- Excel report
+- filename
+
+==================================================
+15. REPORT DATE
+==================================================
+
+Add/use a proper calendar date picker.
+
+The user selects the Report Date.
+
+The selected date must be used in:
+- report header
+- PDF
+- Excel
+- filename
+
+Do NOT automatically use the source attendance period end date.
+
+Example:
+
+If source attendance period is:
+
+10-07-2026 to 06-09-2026
+
+but user selects:
+
+08-09-2026
+
+then the generated reports must use:
+
+08-09-2026
+
+as the report date.
+
+==================================================
+16. ATTENDANCE RANGE
+==================================================
+
+ONLY TWO OPTIONS:
+
+1. Below 65%
+
+Condition:
+
+attendance < 65%
+
+2. 65% – 74%
+
+Condition:
+
+attendance >= 65% AND attendance < 75%
+
+Do not add any additional ranges.
+
+==================================================
+17. ATTENDANCE ANALYSIS
+==================================================
+
+Analyze ONLY the dynamically detected academic subjects.
+
+For each student:
+- check each actual subject
+- compare attendance against selected range
+- include only matching subjects
+
+Never analyze:
+- Counselling
+- Total
+
+Example:
+
+If selected range is:
+
+65%–74%
+
+and a student has:
+
+Subject A = 68%
+Subject B = 82%
+Subject C = 72%
+
+then output:
+
+Subject A – 68%
+Subject C – 72%
+
+==================================================
+18. SUMMARY
+==================================================
+
+After analysis show:
+
+- Total Students Analyzed
+- Students Matching Selected Range
+- Number of Actual Subjects Analyzed
+- Overall Subject Occurrences
+
+Also show dynamically generated subject-wise counts.
+
+Example:
+
+| Subject | Students |
+|---------|----------|
+| Subject A | XX |
+| Subject B | XX |
+| Subject C | XX |
+
+The subjects in this table must come from the uploaded file.
+
+==================================================
+19. GRAPH
+==================================================
+
+Generate a subject-wise graph.
+
+Graph:
+
+X-axis:
+Actual detected subject names
+
+Y-axis:
+Number of students in selected attendance range
+
+Do NOT include:
+- Counselling
+- Total
+
+The graph must be readable.
+
+Do NOT use extremely light colors.
+
+Use sufficient contrast for:
+- graph title
+- axis labels
+- subject labels
+- numbers
+- bars
+
+==================================================
+20. GRAPH OVERLAP — MUST BE FIXED
+==================================================
+
+The current generated PDF has graph/table overlap.
+
+Do NOT fix this by simply moving the graph a few pixels.
+
+Use proper document-flow layout.
+
+The graph must have its own reserved space.
+
+Recommended PDF layout:
+
+PAGE 1:
+
+Report Header
+↓
+Summary
+↓
+Subject-wise Count
+↓
+Graph
+
+PAGE 2 onward:
+
+Student-wise Analysis
+
+If the graph does not fit on page 1:
+
+Move it to the next page.
+
+NEVER allow:
+- graph over table
+- graph over text
+- graph over student rows
+- text over graph
+- table over graph
+
+==================================================
+21. STUDENT-WISE ANALYSIS
+==================================================
+
+The current student-wise analysis must NOT be generated as raw text.
+
+Do NOT generate:
+
+251FA04H88 | SYED BAJI | DBMSIS (64.91%), OOPTJ (73.17%) | 4
+
+Instead use a proper table.
+
+Example:
+
+| S.No | Registration No | Student Name | Subject | Attendance |
+|------|-----------------|--------------|---------|------------|
+| 1 | XXXXX | Student Name | Subject A | 64.50% |
+| 1 | XXXXX | Student Name | Subject B | 71.20% |
+| 2 | XXXXX | Another Student | Subject A | 63.40% |
+
+A grouped table is also acceptable if it is cleaner.
+
+The important requirement:
+
+REAL TABLE CELLS.
+
+Not pipe-separated text.
+
+==================================================
+22. STUDENT NAME WRAPPING
+==================================================
+
+Long names must automatically wrap inside table cells.
+
+Do not:
+- overlap names
+- cut names
+- write names outside cells
+- create overlapping rows
+
+Row height must automatically expand when a name wraps.
+
+==================================================
+23. PDF REPORT TITLE
+==================================================
+
+REMOVE:
+
+"HERWELL / ATTENDANCE ANALYSIS REPORT"
+
+Do NOT show "HerWell" in the generated attendance report.
+
+Use:
+
+STUDENT ATTENDANCE ANALYSIS REPORT
+
+Then prominently show:
+
+II YEAR – BELOW 65% ATTENDANCE ANALYSIS
+
+or:
+
+II YEAR – 65%–74% ATTENDANCE ANALYSIS
+
+The selected year must be dynamic.
+
+The selected range must be dynamic.
+
+==================================================
+24. REMOVE "GENERATED BY"
+==================================================
+
+IMPORTANT:
+
+The generated PDF currently contains a line such as:
+
+Generated by:
+A.N. Harshith Vardhan
+
+REMOVE THIS ENTIRE LINE.
+
+Do NOT show:
+- Generated by
+- A.N. Harshith Vardhan
+- author information
+
+in the exported attendance analysis PDF.
+
+The report should contain only the required attendance/report information.
+
+==================================================
+25. REPORT HEADER
+==================================================
+
+Use a clean header like:
+
+STUDENT ATTENDANCE ANALYSIS REPORT
+
+II YEAR – BELOW 65% ATTENDANCE ANALYSIS
+
+Report Date: 08-09-2026
+Section: 19
+
+Do not include:
+HerWell
+Generated by
+author information
+
+The report should look like a professional academic attendance report.
+
+==================================================
+26. PDF REPORT COLORS
+==================================================
+
+The current PDF report has very low contrast.
+
+Some text appears almost invisible because very light beige text is being placed on a white/light background.
+
+Fix this.
+
+Use:
+- dark readable headings
+- dark readable table text
+- clearly visible numbers
+- sufficient table header contrast
+- readable graph labels
+
+Do NOT use:
+very light beige/cream text on white background.
+
+Every text element must be clearly readable.
+
+==================================================
+27. PDF TABLE PAGINATION
+==================================================
+
+Student-wise analysis may span multiple pages.
+
+Use automatic pagination.
+
+When the table reaches the bottom:
+
+→ create a new page
+→ continue the table
+→ repeat the table header
+
+Do NOT:
+- overlap rows
+- cut rows
+- place text outside page
+- overlap footer
+- overlap graph
+
+==================================================
+28. PDF REPORT CONTENT
+==================================================
+
+Final PDF should contain:
+
+1. STUDENT ATTENDANCE ANALYSIS REPORT
+2. Selected Year
+3. Selected Attendance Range
+4. Report Date
+5. Section
+6. Summary
+7. Subject-wise Count
+8. Graph
+9. Student-wise Analysis Table
+
+Do NOT include:
+- HerWell
+- Generated by
+- author name
+- Counselling as a subject
+- Total as a subject
+
+==================================================
+29. EXCEL EXPORT
+==================================================
+
+Excel export must contain the same analysis data as the PDF.
+
+Include:
+
+Report Date
+Year
+Section
+Attendance Range
+
+Summary
+
+Subject-wise Count
+
+Student-wise Analysis
+
+Use dynamically detected actual subjects.
+
+Exclude:
+- Counselling
+- Counseling
+- Total
+- TOTAL %
+- non-subject metadata
+
+==================================================
+30. PDF + EXCEL DATA MUST MATCH
+==================================================
+
+The PDF and Excel reports must be generated from the SAME analyzed dataset.
+
+Therefore:
+
+PDF subject-wise counts
+=
+Excel subject-wise counts
+
+PDF student-wise analysis
+=
+Excel student-wise analysis
+
+PDF total student count
+=
+Excel total student count
+
+No discrepancies.
+
+==================================================
+31. FILE NAME
+==================================================
+
+Use:
+
+YYYY-MM-DD-Year-Section
+
+Example:
+
+2026-09-08-II-19.pdf
+
+2026-09-08-II-19.xlsx
+
+Use:
+- selected report date
+- selected year
+- selected section
+
+Do NOT use the source attendance period date.
+
+==================================================
+32. FINAL PDF PARSER TEST
+==================================================
+
+Test using the actual uploaded:
+
+Sec-19.pdf
+
+Do NOT create mock data.
+
+Do NOT hardcode the subjects.
+
+Do NOT hardcode the students.
+
+Do NOT hardcode the 59 students.
+
+Expected behavior:
+
+PDF upload
+↓
+Successfully parse all 3 pages
+↓
+Detect student rows
+↓
+Detect actual subjects dynamically
+↓
+Exclude Counselling
+↓
+Exclude TOTAL
+↓
+Continue to Year/Section/Date/Range configuration
+
+The error:
+
+"No attendance table was detected in this PDF"
+
+MUST NOT appear for the provided valid attendance PDF.
+
+==================================================
+33. FINAL VALIDATION
+==================================================
+
+Before marking the task complete, verify:
+
+PDF:
+✓ Upload works
+✓ PDF.js worker works
+✓ No GlobalWorkerOptions.workerSrc error
+✓ All pages processed
+✓ Multi-page PDF treated as one document
+✓ Registration numbers detected
+✓ Student names detected
+✓ Multi-line names reconstructed
+✓ Actual subjects detected dynamically
+✓ Course codes not treated as subjects
+✓ Counselling excluded
+✓ Total excluded
+✓ No false "attendance table not detected" error
+
+Excel:
+✓ Single sheet works
+✓ Multiple sheets work
+✓ Sheet selection works
+✓ Subjects detected dynamically
+✓ Counselling excluded
+✓ Total excluded
+
+Configuration:
+✓ Year dropdown = I, II, III, IV
+✓ Section accepts continuous typing
+✓ Date picker works
+✓ Only two attendance ranges
+✓ Selected year appears in report
+✓ Selected section appears in report
+✓ Selected date appears in report
+✓ Selected range appears in report
+
+Analysis:
+✓ Student count
+✓ Subject-wise count
+✓ Overall subject occurrence count
+✓ Student-wise analysis
+✓ Graph
+
+PDF:
+✓ Professional title
+✓ No "HerWell"
+✓ No "Generated by"
+✓ No author name
+✓ Year shown
+✓ Range shown
+✓ Date shown
+✓ Section shown
+✓ Good color contrast
+✓ Graph does not overlap
+✓ Student-wise analysis is a real table
+✓ Long names wrap
+✓ Automatic page breaks
+✓ Table headers repeat
+✓ No overlapping content
+
+Exports:
+✓ PDF generated
+✓ Excel generated
+✓ Same analysis data in both
+✓ Filename contains Date-Year-Section
+
+==================================================
+FINAL INSTRUCTION
+==================================================
+
+Do not mark this task complete just because the application compiles.
+
+The actual Sec-19.pdf MUST successfully upload and reach the analysis configuration screen.
+
+The PDF parser must be genuinely fixed.
+
+The sample PDF is only a format reference.
+
+Subjects must remain dynamic.
+
+Counselling and Total must ALWAYS be excluded from analysis for BOTH PDF and Excel.
+
+The generated PDF must NOT contain "HerWell" or "Generated by".
+
+Fix the actual PDF parsing problem first, then verify the complete analysis and report-generation workflow.
