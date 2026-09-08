@@ -239,11 +239,17 @@ function parsePdfRowsFromAnchors(lines: PdfLine[], serialOffset: number): { rows
   const rows: AttendanceRow[] = [];
   let lastRow: AttendanceRow | null = null;
   let lastRowY = Number.POSITIVE_INFINITY;
+  let lastRegistrationX = 0;
+  let lastFirstNumericX = Number.POSITIVE_INFINITY;
   let percentageCount = 0;
   lines.forEach((line) => {
     const registrationCell = line.items.find((item) => isPdfRegistrationCandidate(item.text));
     if (!registrationCell) {
-      const continuation = line.items.filter((item) => item.x > (lastRow ? 0 : Number.POSITIVE_INFINITY) && !isPdfRegistrationCandidate(item.text) && parseAttendance(item.text) === null).map((item) => item.text).join(" ").trim();
+      const continuation = line.items
+        .filter((item) => item.x > lastRegistrationX && item.x < lastFirstNumericX && !isPdfRegistrationCandidate(item.text) && parseAttendance(item.text) === null)
+        .map((item) => item.text)
+        .join(" ")
+        .trim();
       if (lastRow && continuation && lastRowY - line.y <= 32 && !looksLikeMetadata(continuation)) lastRow.name = `${lastRow.name} ${continuation}`.replace(/\s+/g, " ").trim();
       return;
     }
@@ -257,6 +263,8 @@ function parsePdfRowsFromAnchors(lines: PdfLine[], serialOffset: number): { rows
     percentageCount += numericItems.length;
     lastRow = { serialNumber: String(serialOffset + rows.length + 1), registrationNumber: safeText(registrationCell.text), name, values };
     lastRowY = line.y;
+    lastRegistrationX = registrationCell.x;
+    lastFirstNumericX = firstNumericX;
     rows.push(lastRow);
   });
   return { rows, percentageCount };
