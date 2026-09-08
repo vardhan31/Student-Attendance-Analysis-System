@@ -15,13 +15,13 @@ const queryClient = new QueryClient();
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
 type AttendanceRange = "below65" | "65to74";
-type AttendanceRow = { registrationNumber: string; name: string; values: Record<string, number | null> };
+type AttendanceRow = { serialNumber: string; registrationNumber: string; name: string; values: Record<string, number | null> };
 type UploadedWorkbook = { fileName: string; fileType: "excel" | "pdf"; sheets: string[]; activeSheet: string };
 type AnalysisConfig = { year: string; section: string; reportDate: string; sheetName: string; range: AttendanceRange };
 type StudentMatch = { subject: string; percentage: number };
-type StudentResult = { registrationNumber: string; year: string; section: string; name: string; matches: StudentMatch[]; matchCount: number };
+type StudentResult = { serialNumber: string; registrationNumber: string; year: string; section: string; name: string; matches: StudentMatch[]; matchCount: number };
 type SubjectCount = { subject: string; studentCount: number };
-type AnalysisSummary = { totalStudents: number; totalSubjects: number; uniqueStudents: number; totalCases: number; selectedYear: string; selectedSection: string; selectedDate: string; sourceSheet: string; rangeLabel: string };
+type AnalysisSummary = { totalStudents: number; totalSubjects: number; uniqueStudents: number; totalCases: number; selectedYear: string; selectedSection: string; selectedDate: string; selectedDateIso: string; sourceSheet: string; rangeLabel: string };
 type Analysis = { summary: AnalysisSummary; students: StudentResult[]; subjects: SubjectCount[]; rows: AttendanceRow[] };
 type ParseResult = { workbook: UploadedWorkbook; rows: Record<string, AttendanceRow[]>; subjects: Record<string, string[]>; warnings: string[] };
 type AppState = { workbook: UploadedWorkbook | null; rows: Record<string, AttendanceRow[]>; subjects: Record<string, string[]>; warnings: string[]; analysis: Analysis | null; config: AnalysisConfig; parsing: boolean; parseError: string };
@@ -57,7 +57,7 @@ function parseAttendance(value: unknown): number | null {
 function looksLikeMetadata(header: string): boolean {
   const normalized = normalizeHeader(header);
   return /^(SL|S NO|SERIAL|NO|COUNSEL(LING)?|TOTAL|TOTAL %|TOTAL PERCENTAGE|AVERAGE|ATTENDANCE|OVERALL|AGGREGATE|PERCENT|PERCENTAGE|SUMMARY|STATUS|REMARKS?|REGD|REGISTRATION|NAME)$/.test(normalized)
-    || /(COUNSEL|TOTAL|AVERAGE|OVERALL|AGGREGATE|PERCENT|SUMMARY|STATUS|REMARK|PROGRAM|BRANCH|DEPARTMENT|SEMESTER|YEAR|SECTION|CLASS|COLLEGE|ROLL|REGISTRATION|REGD)/.test(normalized);
+    || /(COUNSEL|TOTAL|AVERAGE|OVERALL|AGGREGATE|PERCENT|SUMMARY|STATUS|REMARK|CONDUCTED|HOURS|PROGRAM|BRANCH|DEPARTMENT|SEMESTER|YEAR|SECTION|CLASS|COLLEGE|ROLL|REGISTRATION|REGD)/.test(normalized);
 }
 
 function parseSheet(sheet: XLSX.WorkSheet, sheetName: string): { rows: AttendanceRow[]; subjects: string[]; warnings: string[] } {
@@ -71,6 +71,7 @@ function parseSheet(sheet: XLSX.WorkSheet, sheetName: string): { rows: Attendanc
     return { rows: [], subjects: [], warnings };
   }
   const headers = matrix[headerIndex] ?? [];
+  const serialIndex = headers.findIndex((cell) => /^(SL|S NO|SERIAL)$/.test(normalizeHeader(cell)));
   const regIndex = headers.findIndex((cell) => /REGD|REGISTRATION|REG NO|ROLL NO/.test(normalizeHeader(cell)));
   const nameIndex = headers.findIndex((cell) => normalizeHeader(cell) === "NAME" || normalizeHeader(cell).includes("STUDENT NAME"));
   if (regIndex < 0 || nameIndex < 0) {
@@ -97,7 +98,7 @@ function parseSheet(sheet: XLSX.WorkSheet, sheetName: string): { rows: Attendanc
     seen.add(key);
     const values: Record<string, number | null> = {};
     subjects.forEach((subject) => { values[subject] = parseAttendance(row[headers.findIndex((header) => safeText(header) === subject)]); });
-    rows.push({ registrationNumber, name, values });
+    rows.push({ serialNumber: serialIndex >= 0 ? safeText(row[serialIndex]) : String(rows.length + 1), registrationNumber, name, values });
   });
   if (duplicateRegs.size) warnings.push(`${sheetName}: duplicate registration number${duplicateRegs.size === 1 ? "" : "s"} found (${Array.from(duplicateRegs).slice(0, 4).join(", ")}). The first record is used in analysis.`);
   if (!rows.length) warnings.push(`${sheetName}: no student records were found below the header.`);
@@ -109,6 +110,7 @@ type PdfCell = { text: string; x: number; y: number; width: number };
 type PdfLine = { y: number; items: PdfCell[] };
 type PdfHeaderMapping = {
   headerY: number;
+  serial?: PdfCell;
   registration: PdfCell;
   name: PdfCell;
   subjects: PdfCell[];
@@ -151,6 +153,7 @@ function findPdfHeaderMapping(lines: PdfLine[]): PdfHeaderMapping | null {
   if (!headerLine) return null;
   const registration = findPdfHeaderCell(headerLine, /(REGD|REGISTRATION|REG NO|ROLL NO)/);
   const name = findPdfHeaderCell(headerLine, /^(NAME|STUDENT NAME)$/);
+  const serial = findPdfHeaderCell(headerLine, /^(SL|S NO|SERIAL)$/);
   if (!registration || !name) return null;
   const dataLines = lines.filter((line) => line.y < headerLine.y && !/(REGD|REGISTRATION|REG NO|ROLL NO)/.test(normalizeHeader(line.items.map((item) => item.text).join(" "))));
   const subjects = headerLine.items
@@ -159,7 +162,7 @@ function findPdfHeaderMapping(lines: PdfLine[]): PdfHeaderMapping | null {
       const cell = pdfColumnMatch(line, item.x);
       return cell && parseAttendance(cell.text) !== null;
     }));
-  return { headerY: headerLine.y, registration, name, subjects: Array.from(new Map(subjects.map((item) => [safeText(item.text), item])).values()) };
+  return { headerY: headerLine.y, serial, registration, name, subjects: Array.from(new Map(subjects.map((item) => [safeText(item.text), item])).values()) };
 }
 
 function samePdfSubjects(first: PdfHeaderMapping, next: PdfHeaderMapping): boolean {
@@ -178,10 +181,23 @@ function parsePdfRows(lines: PdfLine[], mapping: PdfHeaderMapping, pageName: str
   const rows: AttendanceRow[] = [];
   const duplicateRegs = new Set<string>();
   const seenRegs = new Set<string>();
+  let lastRow: AttendanceRow | null = null;
+  let lastRowY = Number.POSITIVE_INFINITY;
   dataLines.forEach((line) => {
     const regCell = pdfColumnMatch(line, mapping.registration.x);
     const registrationNumber = safeText(regCell?.text);
-    if (!registrationNumber || !/[A-Za-z0-9]{3,}/.test(registrationNumber)) return;
+    if (!registrationNumber || !/[A-Za-z0-9]{3,}/.test(registrationNumber)) {
+      const continuation = line.items
+        .filter((item) => item.x >= mapping.name.x - 8 && item.x < firstSubjectX - 5)
+        .map((item) => item.text)
+        .join(" ")
+        .trim();
+      const hasSubjectValue = subjectColumns.some((column) => parseAttendance(pdfColumnMatch(line, column.x)?.text) !== null);
+      if (lastRow && continuation && !hasSubjectValue && lastRowY - line.y <= 32 && !looksLikeMetadata(continuation)) {
+        lastRow.name = `${lastRow.name} ${continuation}`.replace(/\s+/g, " ").trim();
+      }
+      return;
+    }
     const name = line.items
       .filter((item) => item !== regCell && item.x >= mapping.name.x - 8 && item.x < firstSubjectX - 5)
       .map((item) => item.text)
@@ -196,7 +212,10 @@ function parsePdfRows(lines: PdfLine[], mapping: PdfHeaderMapping, pageName: str
       const cell = pdfColumnMatch(line, column.x);
       values[safeText(column.text)] = parseAttendance(cell?.text);
     });
-    rows.push({ registrationNumber, name, values });
+    const serialNumber = mapping.serial ? safeText(pdfColumnMatch(line, mapping.serial.x)?.text) : String(rows.length + 1);
+    lastRow = { serialNumber, registrationNumber, name, values };
+    lastRowY = line.y;
+    rows.push(lastRow);
   });
   return { rows, duplicateRegs };
 }
@@ -277,11 +296,11 @@ function buildAnalysis(state: AppState): Analysis | null {
   });
   const students: StudentResult[] = Array.from(unique.values()).map((row) => {
     const matches = (subjects[config.sheetName] ?? []).filter((subject) => row.values[subject] !== null && threshold(row.values[subject] as number)).map((subject) => ({ subject, percentage: Math.round((row.values[subject] as number) * 100) / 100 }));
-    return { registrationNumber: row.registrationNumber, name: row.name, year: config.year.trim(), section: config.section.trim(), matches, matchCount: matches.length };
+    return { serialNumber: row.serialNumber, registrationNumber: row.registrationNumber, name: row.name, year: config.year.trim(), section: config.section.trim(), matches, matchCount: matches.length };
   }).filter((student) => student.matchCount > 0);
-  const subjectMap = new Map<string, number>();
+  const subjectMap = new Map<string, number>((subjects[config.sheetName] ?? []).map((subject) => [subject, 0]));
   students.forEach((student) => student.matches.forEach(({ subject }) => subjectMap.set(subject, (subjectMap.get(subject) ?? 0) + 1)));
-  const subjectCounts = Array.from(subjectMap.entries()).map(([subject, studentCount]) => ({ subject, studentCount })).sort((a, b) => b.studentCount - a.studentCount || a.subject.localeCompare(b.subject));
+  const subjectCounts = Array.from(subjectMap.entries()).map(([subject, studentCount]) => ({ subject, studentCount }));
   return {
     summary: {
       totalStudents: unique.size,
@@ -291,6 +310,7 @@ function buildAnalysis(state: AppState): Analysis | null {
       selectedYear: config.year.trim(),
       selectedSection: config.section.trim(),
       selectedDate: formatDateForReport(config.reportDate),
+      selectedDateIso: config.reportDate,
       sourceSheet: state.workbook?.fileType === "pdf" ? "Complete PDF document" : config.sheetName,
       rangeLabel: rangeLabels[config.range],
     },
@@ -305,16 +325,17 @@ function exportAnalysis(analysis: Analysis): void {
   const workbook = XLSX.utils.book_new();
   const safe = (value: unknown) => safeText(value).replace(/[\\/:*?"<>|]+/g, "-").replace(/\s+/g, "-") || "report";
   const studentRows = analysis.students.map((student) => ({
+    "S.No": student.serialNumber,
     "Registration Number": student.registrationNumber,
     Name: student.name,
     Year: student.year,
     Section: student.section,
-    "At-risk subjects": student.matches.map((match) => `${match.subject} (${match.percentage.toFixed(2)}%)`).join("; "),
+    "Low Attendance Subjects": student.matches.map((match) => `${match.subject} - ${match.percentage.toFixed(2)}%`).join("; "),
     "Match count": student.matchCount,
   }));
   const subjectRows = analysis.subjects.map((subject) => ({ Subject: subject.subject, "Student count": subject.studentCount }));
   const detailRows = analysis.students.flatMap((student) => student.matches.map((match) => ({
-    "Registration Number": student.registrationNumber, Name: student.name, Year: student.year, Section: student.section, Subject: match.subject, Attendance: `${match.percentage.toFixed(2)}%`,
+    "S.No": student.serialNumber, "Registration Number": student.registrationNumber, Name: student.name, Year: student.year, Section: student.section, Subject: match.subject, Attendance: `${match.percentage.toFixed(2)}%`,
   })));
   XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet([{
       "Report date": summary.selectedDate, "Source sheet": summary.sourceSheet, Year: summary.selectedYear, Section: summary.selectedSection, Range: summary.rangeLabel,
@@ -323,7 +344,7 @@ function exportAnalysis(analysis: Analysis): void {
   XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(studentRows), "Student-wise Analysis");
   XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(subjectRows), "Subject-wise Analysis");
   XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(detailRows), "Detailed Analysis");
-  XLSX.writeFile(workbook, `${safe(summary.selectedDate)}-${safe(summary.selectedYear)}-${safe(summary.selectedSection)}.xlsx`);
+  XLSX.writeFile(workbook, `${safe(summary.selectedDateIso)}-${safe(summary.selectedYear)}-${safe(summary.selectedSection)}.xlsx`);
 }
 
 function pdfSafe(value: unknown): string {
@@ -332,59 +353,120 @@ function pdfSafe(value: unknown): string {
 
 function buildPdfBlob(analysis: Analysis): Blob {
   const summary = analysis.summary;
-  const lines = [
-    "STUDENT ATTENDANCE ANALYSIS REPORT",
-    "",
-    `Report date: ${summary.selectedDate}`,
-    `Year: ${summary.selectedYear}    Section: ${summary.selectedSection}`,
-    `Attendance range: ${summary.rangeLabel}`,
-    `Source sheet: ${summary.sourceSheet}`,
-    "",
-    "SUMMARY",
-    `Students scanned: ${summary.totalStudents}`,
-    `Students matching range: ${summary.uniqueStudents}`,
-    `Subjects detected: ${summary.totalSubjects}`,
-    `Overall subject count: ${summary.totalCases}`,
-    "",
-    "SUBJECT-WISE COUNT",
-    ...analysis.subjects.map((subject) => `${subject.subject}: ${subject.studentCount} students`),
-    "",
-    "STUDENT-WISE ANALYSIS",
-    ...analysis.students.map((student) => `${student.registrationNumber} | ${student.name} | ${student.matches.map((match) => `${match.subject} (${match.percentage.toFixed(2)}%)`).join(", ")} | ${student.matchCount}`),
-  ];
-  const pageSize = 42;
-  const pages: string[][] = [];
-  for (let index = 0; index < lines.length; index += pageSize) pages.push(lines.slice(index, index + pageSize));
-  if (!pages.length) pages.push([]);
-  const maxCount = Math.max(1, ...analysis.subjects.map((subject) => subject.studentCount));
-  const pageContents = pages.map((pageLines, pageIndex) => {
-    const commands: string[] = ["BT", "/F1 12 Tf", "48 760 Td"];
-    pageLines.forEach((line, lineIndex) => {
-      const heading = line === "STUDENT ATTENDANCE ANALYSIS REPORT" || line === "SUMMARY" || line === "SUBJECT-WISE COUNT" || line === "STUDENT-WISE ANALYSIS";
-      commands.push(`${heading ? 12 : 9} Tf`, `(${pdfSafe(line)}) Tj`);
-      if (lineIndex < pageLines.length - 1) commands.push(`0 -${heading ? 22 : 16} Td`);
+  const margin = 42;
+  const encoder = new TextEncoder();
+  const pageContents: string[] = [];
+  const text = (commands: string[], value: unknown, x: number, y: number, size = 9, bold = false) => {
+    commands.push(`BT /${bold ? "F2" : "F1"} ${size} Tf ${x} ${y} Td (${pdfSafe(value)}) Tj ET`);
+  };
+  const wrap = (value: unknown, maxChars: number) => {
+    const lines: string[] = [];
+    let current = "";
+    pdfSafe(value).split(/\s+/).forEach((word) => {
+      if (!word) return;
+      if (current && `${current} ${word}`.length > maxChars) {
+        lines.push(current);
+        current = word;
+      } else current = current ? `${current} ${word}` : word;
     });
-    commands.push("ET");
-    if (pageIndex === 0 && analysis.subjects.length) {
-      let chartY = 218;
-      commands.push("0.09 0.42 0.40 rg");
-      analysis.subjects.slice(0, 8).forEach((subject) => {
-        const width = Math.max(4, Math.round((subject.studentCount / maxCount) * 260));
-        commands.push(`${48} ${chartY} ${width} 8 re f`, "0 0 0 rg", `BT /F1 8 Tf 320 ${chartY + 1} Td (${pdfSafe(subject.subject)}: ${subject.studentCount}) Tj ET`, "0.09 0.42 0.40 rg");
-        chartY -= 16;
+    if (current || !lines.length) lines.push(current);
+    return lines;
+  };
+  const drawTable = (commands: string[], startY: number, columns: Array<{ title: string; width: number; maxChars: number }>, rows: string[][], headerColor: "teal" | "sand" = "sand") => {
+    let y = startY;
+    const totalWidth = columns.reduce((sum, column) => sum + column.width, 0);
+    commands.push(`${headerColor === "teal" ? "0.09 0.42 0.40" : "0.94 0.91 0.84"} rg ${margin} ${y - 20} ${totalWidth} 20 re f`);
+    let x = margin;
+    columns.forEach((column) => { text(commands, column.title, x + 5, y - 14, 8, true); x += column.width; });
+    y -= 20;
+    rows.forEach((row) => {
+      const wrapped = row.map((cell, index) => wrap(cell, columns[index].maxChars));
+      const rowHeight = Math.max(24, ...wrapped.map((lines) => lines.length * 10 + 10));
+      commands.push(`0.86 0.84 0.79 RG ${margin} ${y - rowHeight} ${totalWidth} ${rowHeight} re S`);
+      x = margin;
+      wrapped.forEach((lines, index) => {
+        lines.forEach((line, lineIndex) => text(commands, line, x + 5, y - 13 - lineIndex * 10, 8));
+        commands.push(`0.86 0.84 0.79 RG ${x} ${y - rowHeight} m ${x} ${y} l S`);
+        x += columns[index].width;
       });
-    }
-    return commands.join("\n");
+      commands.push(`0.86 0.84 0.79 RG ${x} ${y - rowHeight} m ${x} ${y} l S`);
+      y -= rowHeight;
+    });
+    return y;
+  };
+
+  const firstPage: string[] = [];
+  text(firstPage, "HERWELL / ATTENDANCE ANALYSIS REPORT", margin, 748, 16, true);
+  text(firstPage, `Year: ${summary.selectedYear}    Section: ${summary.selectedSection}`, margin, 720, 10);
+  text(firstPage, `Report Date: ${summary.selectedDate}    Attendance Range: ${summary.rangeLabel}`, margin, 704, 10);
+  text(firstPage, `Source: ${summary.sourceSheet}`, margin, 688, 9);
+  firstPage.push(`0.86 0.84 0.79 RG ${margin} 674 m 570 674 l S`);
+  text(firstPage, "SUMMARY", margin, 650, 12, true);
+  [["Total Students Analyzed", summary.totalStudents], ["Students with Matching Attendance", summary.uniqueStudents], ["Overall Subject Occurrences", summary.totalCases]].forEach(([label, value], index) => {
+    const x = margin + index * 176;
+    firstPage.push(`0.94 0.91 0.84 rg ${x} 602 164 34 re f`);
+    text(firstPage, label, x + 8, 623, 7, true);
+    text(firstPage, value, x + 8, 610, 13, true);
   });
-  const objects: string[] = ["<< /Type /Catalog /Pages 2 0 R >>", "", "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"];
+  text(firstPage, "SUBJECT-WISE COUNT", margin, 578, 11, true);
+  drawTable(firstPage, 558, [{ title: "Subject", width: 265, maxChars: 28 }, { title: "Students", width: 90, maxChars: 10 }], analysis.subjects.map((subject) => [subject.subject, String(subject.studentCount)]));
+  text(firstPage, "GRAPH · STUDENTS IN SELECTED RANGE", margin, 386, 11, true);
+  firstPage.push(`0.98 0.97 0.94 rg ${margin} 190 528 170 re f`);
+  const maxCount = Math.max(1, ...analysis.subjects.map((subject) => subject.studentCount));
+  const chartStep = Math.min(19, Math.max(12, Math.floor(132 / Math.max(1, analysis.subjects.length))));
+  analysis.subjects.forEach((subject, index) => {
+    const y = 360 - 20 - index * chartStep;
+    const width = Math.max(subject.studentCount ? 3 : 0, Math.round((subject.studentCount / maxCount) * 265));
+    text(firstPage, subject.subject, margin + 8, y + 2, 8);
+    firstPage.push(`0.09 0.42 0.40 rg ${margin + 105} ${y} ${width} 9 re f`);
+    text(firstPage, String(subject.studentCount), margin + 116 + width, y + 2, 8, true);
+  });
+  pageContents.push(firstPage.join("\n"));
+
+  const studentColumns = [
+    { title: "S.No", width: 35, maxChars: 5 },
+    { title: "Registration No", width: 105, maxChars: 15 },
+    { title: "Student Name", width: 150, maxChars: 22 },
+    { title: "Low Attendance Subjects", width: 238, maxChars: 35 },
+  ];
+  const studentRows = analysis.students.map((student) => [
+    student.serialNumber,
+    student.registrationNumber,
+    student.name,
+    student.matches.map((match) => `${match.subject} - ${match.percentage.toFixed(2)}%`).join(", "),
+  ]);
+  const studentPages: string[][][] = [];
+  let currentRows: string[][] = [];
+  let currentHeight = 0;
+  studentRows.forEach((row) => {
+    const wrapped = row.map((cell, index) => wrap(cell, studentColumns[index].maxChars));
+    const rowHeight = Math.max(24, ...wrapped.map((lines) => lines.length * 10 + 10));
+    if (currentRows.length && currentHeight + rowHeight > 620) {
+      studentPages.push(currentRows);
+      currentRows = [];
+      currentHeight = 0;
+    }
+    currentRows.push(row);
+    currentHeight += rowHeight;
+  });
+  if (currentRows.length || !studentPages.length) studentPages.push(currentRows);
+  studentPages.forEach((rows) => {
+    const commands: string[] = [];
+    text(commands, "STUDENT-WISE ANALYSIS", margin, 748, 14, true);
+    text(commands, `${summary.selectedDate} · Year ${summary.selectedYear} · Section ${summary.selectedSection}`, margin, 728, 9);
+    drawTable(commands, 700, studentColumns, rows, "teal");
+    pageContents.push(commands.join("\n"));
+  });
+
+  const numberedPages = pageContents.map((content, index) => `${content}\n0.45 0.46 0.45 rg\nBT /F1 8 Tf 520 28 Td (Page ${index + 1} of ${pageContents.length}) Tj ET`);
+  const objects: string[] = ["<< /Type /Catalog /Pages 2 0 R >>", "", "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>", "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>"];
   const pageRefs: number[] = [];
-  pageContents.forEach((content) => {
-    const contentIndex = objects.push(`<< /Length ${content.length} >>\nstream\n${content}\nendstream`);
-    const pageIndex = objects.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents ${contentIndex} 0 R >>`);
+  numberedPages.forEach((content) => {
+    const contentIndex = objects.push(`<< /Length ${encoder.encode(content).length} >>\nstream\n${content}\nendstream`);
+    const pageIndex = objects.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents ${contentIndex} 0 R >>`);
     pageRefs.push(pageIndex);
   });
   objects[1] = `<< /Type /Pages /Kids [${pageRefs.map((reference) => `${reference} 0 R`).join(" ")}] /Count ${pageRefs.length} >>`;
-  const encoder = new TextEncoder();
   const chunks = ["%PDF-1.4\n"];
   const offsets = [0];
   let byteLength = encoder.encode(chunks[0]).length;
@@ -408,7 +490,7 @@ function exportPdfAnalysis(analysis: Analysis): void {
   const url = URL.createObjectURL(buildPdfBlob(analysis));
   const link = document.createElement("a");
   link.href = url;
-  link.download = `${safe(summary.selectedDate)}-${safe(summary.selectedYear)}-${safe(summary.selectedSection)}.pdf`;
+  link.download = `${safe(summary.selectedDateIso)}-${safe(summary.selectedYear)}-${safe(summary.selectedSection)}.pdf`;
   link.click();
   URL.revokeObjectURL(url);
 }
@@ -547,7 +629,7 @@ function Results({ analysis, workbookName }: { analysis: Analysis; workbookName:
 
 function ChartEmpty({ text }: { text: string }) { return <div className="flex h-[245px] items-center justify-center text-xs text-[hsl(var(--muted-foreground))]">{text}</div>; }
 function StudentTable({ students }: { students: StudentResult[] }) {
-  return students.length ? <div className="table-wrap"><table className="data-table" data-testid="table-student-results"><thead><tr><th>Registration</th><th>Student</th><th>At-risk subjects</th><th className="text-right">Count</th></tr></thead><tbody>{students.map((student, index) => <tr key={`${student.registrationNumber}-${index}`} data-testid={`row-student-${index}`}><td className="mono whitespace-nowrap text-xs text-[hsl(var(--primary))]">{student.registrationNumber}</td><td className="min-w-[150px] font-semibold">{student.name}</td><td><div className="flex max-w-[520px] flex-wrap gap-1.5">{student.matches.map((match) => <span key={match.subject} className="inline-flex items-center gap-1 rounded-md bg-[hsl(var(--accent)/.13)] px-2 py-1 text-[11px] font-medium text-[hsl(var(--accent-foreground))]">{match.subject} <span className="mono text-[10px] opacity-70">{match.percentage.toFixed(2)}%</span></span>)}</div></td><td className="text-right"><span className="inline-flex min-w-7 items-center justify-center rounded-md bg-[hsl(var(--primary)/.1)] px-2 py-1 mono text-xs font-bold text-[hsl(var(--primary))]">{student.matchCount}</span></td></tr>)}</tbody></table></div> : <div className="flex min-h-[190px] items-center justify-center px-5 text-center text-sm text-[hsl(var(--muted-foreground))]">No students match that search.</div>;
+  return students.length ? <div className="table-wrap"><table className="data-table" data-testid="table-student-results"><thead><tr><th>S.No</th><th>Registration No</th><th>Student Name</th><th>Low Attendance Subjects</th><th className="text-right">Count</th></tr></thead><tbody>{students.map((student, index) => <tr key={`${student.registrationNumber}-${index}`} data-testid={`row-student-${index}`}><td className="mono text-xs text-[hsl(var(--muted-foreground))]">{student.serialNumber}</td><td className="mono whitespace-nowrap text-xs text-[hsl(var(--primary))]">{student.registrationNumber}</td><td className="min-w-[150px] max-w-[220px] whitespace-normal font-semibold">{student.name}</td><td><div className="flex max-w-[520px] flex-wrap gap-1.5">{student.matches.map((match) => <span key={match.subject} className="inline-flex items-center gap-1 rounded-md bg-[hsl(var(--accent)/.13)] px-2 py-1 text-[11px] font-medium text-[hsl(var(--accent-foreground))]">{match.subject} <span className="mono text-[10px] opacity-70">{match.percentage.toFixed(2)}%</span></span>)}</div></td><td className="text-right"><span className="inline-flex min-w-7 items-center justify-center rounded-md bg-[hsl(var(--primary)/.1)] px-2 py-1 mono text-xs font-bold text-[hsl(var(--primary))]">{student.matchCount}</span></td></tr>)}</tbody></table></div> : <div className="flex min-h-[190px] items-center justify-center px-5 text-center text-sm text-[hsl(var(--muted-foreground))]">No students match that search.</div>;
 }
 function SubjectTable({ subjects }: { subjects: SubjectCount[] }) {
   return subjects.length ? <div className="table-wrap"><table className="data-table" data-testid="table-subject-results"><thead><tr><th>Rank</th><th>Subject</th><th className="text-right">Students with matches</th><th className="w-1/3">Relative volume</th></tr></thead><tbody>{subjects.map((subject, index) => <tr key={subject.subject}><td className="mono text-[hsl(var(--muted-foreground))]">{String(index + 1).padStart(2, "0")}</td><td className="font-semibold">{subject.subject}</td><td className="text-right font-bold">{subject.studentCount}</td><td><div className="h-2 rounded-full bg-[hsl(var(--muted))]"><div className="h-full rounded-full bg-[hsl(var(--primary))]" style={{ width: `${Math.max(5, subject.studentCount / Math.max(...subjects.map((entry) => entry.studentCount)) * 100)}%` }} /></div></td></tr>)}</tbody></table></div> : <div className="flex min-h-[190px] items-center justify-center text-sm text-[hsl(var(--muted-foreground))]">No subject cases to show.</div>;

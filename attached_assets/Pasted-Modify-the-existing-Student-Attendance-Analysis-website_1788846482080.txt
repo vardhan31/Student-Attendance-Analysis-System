@@ -1,0 +1,569 @@
+Modify the existing Student Attendance Analysis website. Do NOT rebuild the application from scratch. Preserve the existing UI, workflow, styling, Excel analysis, attendance-range logic, and existing functionality.
+
+I have now provided the actual attendance PDF format that this application must support.
+
+==================================================
+1. ACTUAL PDF FORMAT TO SUPPORT
+==================================================
+
+The uploaded attendance PDF is a 3-page attendance report.
+
+Page 1 contains the main report heading and attendance table header.
+
+The report structure is approximately:
+
+VFSTR :: Vadlamudi
+B.Tech, Computer Science & Engineering, II Year - I Semester, 19 Section
+attendance report from 10-07-2026 to 06-09-2026
+
+Columns include:
+
+SL
+REGD.NO
+NAME
+DS
+DBMSIS
+OOPTJ
+DLDES
+AI
+DMS-MTA
+DWAV
+Counselling
+TOTAL %
+
+The actual subject columns are:
+
+DS
+DBMSIS
+OOPTJ
+DLDES
+AI
+DMS-MTA
+DWAV
+
+IMPORTANT:
+Counselling is NOT a subject.
+TOTAL is NOT a subject.
+
+Therefore:
+- NEVER analyze Counselling.
+- NEVER analyze TOTAL.
+- NEVER display Counselling or TOTAL as subjects in the student-wise attendance analysis.
+- Only analyze the actual subject attendance percentages.
+
+The PDF also contains "No. Of Conducted Hours" information. This can be used only if required for validation/analysis, but it must NOT be treated as a student or subject.
+
+==================================================
+2. MULTI-PAGE PDF PARSING
+==================================================
+
+Treat the complete PDF as ONE attendance document.
+
+The 3 PDF pages are NOT separate sheets.
+
+Page 1 contains the table header and student rows.
+
+Page 2 and Page 3 continue the same attendance table with additional student rows.
+
+The parser MUST:
+- Detect the header structure from the first relevant page.
+- Remember the detected column mapping.
+- Continue parsing student rows on pages 2 and 3 even when the header is not repeated.
+- Combine all student rows into one dataset.
+- Preserve SL number, registration number, student name, and subject attendance percentages correctly.
+
+For this sample PDF, the complete dataset contains 59 students.
+
+Do NOT show warnings such as:
+"Page 2 could not find registration number and name header row"
+or
+"Page 3 could not find registration number and name header row"
+
+when those pages are simply continuation pages.
+
+==================================================
+3. PDF TABLE EXTRACTION
+==================================================
+
+The parser must recognize these fields:
+
+1. SL
+2. Registration Number
+3. Student Name
+4. DS attendance %
+5. DBMSIS attendance %
+6. OOPTJ attendance %
+7. DLDES attendance %
+8. AI attendance %
+9. DMS-MTA attendance %
+10. DWAV attendance %
+
+Ignore:
+- Counselling
+- TOTAL %
+- Other non-subject metadata
+
+Handle student names that wrap onto a second line.
+
+For example, if a student's name appears across two PDF text lines, combine the lines into one student name.
+
+Do not accidentally interpret the second line of a student name as a new student.
+
+==================================================
+4. EXCEL INPUT MUST CONTINUE WORKING
+==================================================
+
+For Excel:
+
+If workbook contains multiple sheets:
+- Show sheet selection.
+- User selects the sheet to analyze.
+
+If workbook contains one sheet:
+- Automatically use that sheet.
+- Skip sheet selection.
+
+Do not change this existing behavior.
+
+==================================================
+5. CONFIGURATION
+==================================================
+
+Keep the existing configuration flow.
+
+Year:
+Use a dropdown with ONLY:
+- I
+- II
+- III
+- IV
+
+Do NOT label this field "Academic Year".
+
+The label should be:
+"Year"
+
+Section:
+Use a normal text input.
+
+IMPORTANT:
+The section input must NOT lose focus after typing one character.
+
+For example, if the user types:
+19
+
+they should be able to type both characters continuously.
+
+The user must not have to click the input again after typing the first character.
+
+Report Date:
+Use a proper date picker/calendar.
+
+The user selects the report-generation date.
+
+This selected date must be used in:
+- Report heading
+- Excel filename
+- PDF filename
+
+Attendance Range:
+ONLY TWO OPTIONS:
+
+1. Below 65%
+   - attendance strictly below 65%
+
+2. 65% – 74%
+   - 65% inclusive
+   - 75% exclusive
+
+Do not add any other ranges.
+
+==================================================
+6. ATTENDANCE ANALYSIS
+==================================================
+
+After clicking Analyze:
+
+Analyze subject-wise attendance.
+
+For each student:
+- Check every actual subject.
+- Identify subjects where the student's attendance falls within the selected range.
+- Do NOT check Counselling.
+- Do NOT check TOTAL.
+
+Example:
+
+If selected range is:
+65% – 74%
+
+and a student has:
+
+DS = 80%
+DBMSIS = 68%
+OOPTJ = 73%
+DLDES = 85%
+
+Then the student-wise result should show:
+
+DBMSIS (68%)
+OOPTJ (73%)
+
+Only subjects matching the selected range should appear.
+
+==================================================
+7. STUDENT-WISE RESULT UI
+==================================================
+
+The on-screen student-wise analysis should be displayed as a CLEAN TABLE.
+
+DO NOT display student results like:
+
+251FA04H88 | SYED BAJI | DBMSIS (64.91%), OOPTJ (73.17%) | 4
+
+Instead use a proper responsive table such as:
+
+| S.No | Registration No | Student Name | Subject | Attendance |
+|------|-----------------|--------------|---------|------------|
+| 1 | 251FA04H88 | SYED BAJI | DBMSIS | 64.91% |
+| 1 | 251FA04H88 | SYED BAJI | OOPTJ | 73.17% |
+
+OR, preferably, group the subjects for each student in a readable structured table:
+
+| S.No | Registration No | Student Name | Low Attendance Subjects |
+|------|-----------------|--------------|-------------------------|
+| 1 | 251FA04H88 | SYED BAJI | DBMSIS – 64.91%, OOPTJ – 73.17% |
+
+Use proper table cells.
+
+Do NOT use raw pipe-separated text as the visual report.
+
+Student names must wrap naturally inside the cell.
+
+The table must be responsive on desktop and mobile.
+
+==================================================
+8. SUMMARY COUNTS
+==================================================
+
+After analysis show:
+
+- Total students analyzed
+- Students matching selected attendance range
+- Total subject-wise occurrences
+- Count for each subject
+
+Example:
+
+Subject-wise count:
+
+DS       : XX
+DBMSIS   : XX
+OOPTJ    : XX
+DLDES    : XX
+AI       : XX
+DMS-MTA  : XX
+DWAV     : XX
+
+Also show:
+
+Overall subject occurrence count: XX
+
+These counts must automatically change according to the selected attendance range.
+
+==================================================
+9. GRAPH / CHART
+==================================================
+
+Generate a graph after analysis.
+
+The graph should represent:
+
+Subject-wise number of students falling within the selected attendance range.
+
+Example:
+
+DS       → count
+DBMSIS   → count
+OOPTJ    → count
+DLDES    → count
+AI       → count
+DMS-MTA  → count
+DWAV     → count
+
+Use a clean bar chart.
+
+IMPORTANT:
+The graph MUST NOT overlap with:
+- Student-wise table
+- Student names
+- Subject text
+- Page boundaries
+- Other report elements
+
+Give the graph its own properly sized container/section.
+
+If the PDF report is being generated, place the graph in a dedicated section or page.
+
+Never position the graph using fixed absolute coordinates that can overlap dynamic table content.
+
+==================================================
+10. PDF REPORT GENERATION
+==================================================
+
+This is VERY IMPORTANT.
+
+The generated PDF report must be professionally formatted.
+
+Do NOT generate student-wise analysis as plain text lines.
+
+The PDF must contain a REAL TABLE.
+
+Report structure:
+
+--------------------------------------------------
+HERWELL / ATTENDANCE ANALYSIS REPORT
+--------------------------------------------------
+
+Year: II
+Section: 19
+Report Date: DD-MM-YYYY
+Attendance Range: Below 65% / 65%–74%
+
+--------------------------------------------------
+SUMMARY
+--------------------------------------------------
+
+Total Students Analyzed: XX
+
+Students with Matching Attendance: XX
+
+Overall Subject Occurrences: XX
+
+--------------------------------------------------
+SUBJECT-WISE COUNT
+--------------------------------------------------
+
+| Subject | Students |
+|---------|----------|
+| DS      | XX       |
+| DBMSIS  | XX       |
+| OOPTJ   | XX       |
+| DLDES   | XX       |
+| AI      | XX       |
+| DMS-MTA | XX       |
+| DWAV    | XX       |
+
+--------------------------------------------------
+GRAPH
+--------------------------------------------------
+
+Place the subject-wise bar chart here.
+
+The chart must have enough width and height.
+
+The chart must NOT overlap any table or text.
+
+--------------------------------------------------
+STUDENT-WISE ANALYSIS
+--------------------------------------------------
+
+Use a clean table:
+
+| S.No | Registration No | Student Name | Subject(s) | Attendance |
+|------|-----------------|--------------|------------|------------|
+
+OR use grouped rows where appropriate.
+
+Long names must wrap inside cells.
+
+If there are many students:
+- Automatically create additional PDF pages.
+- Repeat the table header on every new page.
+- Never allow rows to overlap.
+- Never allow text to run outside the page.
+- Never allow the graph to overlap the table.
+
+Use proper document flow/layout rather than manually positioning elements.
+
+==================================================
+11. PDF REPORT PAGE BREAKS
+==================================================
+
+Use automatic pagination.
+
+Recommended structure:
+
+Page 1:
+- Report title
+- Year
+- Section
+- Date
+- Attendance range
+- Summary
+- Subject-wise counts
+- Graph
+
+Page 2 onward:
+- Student-wise analysis table
+
+If the graph or summary requires more space, allow it to move to the next page naturally.
+
+NEVER squeeze the graph into insufficient space.
+
+NEVER overlap graph and table just to keep everything on one page.
+
+==================================================
+12. EXCEL EXPORT
+==================================================
+
+Keep Excel export functionality.
+
+The Excel report should contain the same analysis represented in the PDF.
+
+Include:
+
+- Report date
+- Year
+- Section
+- Selected attendance range
+- Summary
+- Subject-wise counts
+- Student-wise analysis
+
+Exclude:
+- Counselling
+- TOTAL
+
+==================================================
+13. FILE NAMING
+==================================================
+
+Generated files must contain:
+
+Date
+Year
+Section
+
+Preferred format:
+
+YYYY-MM-DD-Year-Section
+
+Example:
+
+2026-09-08-II-19.xlsx
+2026-09-08-II-19.pdf
+
+Use the selected report date, NOT the attendance period's starting date.
+
+For example, if the source PDF says:
+
+attendance report from 10-07-2026 to 06-09-2026
+
+but the user selects:
+
+08-09-2026
+
+the generated report filename must use:
+
+2026-09-08
+
+NOT 10-07-2026
+and NOT 06-09-2026.
+
+==================================================
+14. REPORT DATA CONSISTENCY
+==================================================
+
+The Excel and PDF reports must be generated from the SAME analyzed dataset.
+
+Therefore:
+
+Excel Student-wise Analysis
+=
+PDF Student-wise Analysis
+
+Excel Subject-wise Counts
+=
+PDF Subject-wise Counts
+
+Excel Total Students
+=
+PDF Total Students
+
+No differences between the two exports.
+
+==================================================
+15. PDF REPORT VISUAL QUALITY
+==================================================
+
+The generated PDF must look like a professional academic attendance report.
+
+Use:
+- Clear title
+- Proper margins
+- Consistent typography
+- Table borders
+- Header row styling
+- Adequate row height
+- Proper cell padding
+- Automatic text wrapping
+- Page numbers where appropriate
+- Repeated table headers on subsequent pages
+
+Most importantly:
+
+NO OVERLAPPING ELEMENTS.
+
+The current problem where the graph overlaps student rows MUST be completely eliminated.
+
+The current problem where student-wise analysis appears as raw text such as:
+
+251FA04H88 | SYED BAJI | DBMSIS (64.91%), OOPTJ (73.17%) | 4
+
+must also be eliminated.
+
+It must be rendered as a proper PDF table.
+
+==================================================
+16. FINAL TESTING
+==================================================
+
+Test with the provided 3-page attendance PDF.
+
+Verify:
+
+1. PDF uploads successfully.
+2. PDF is treated as one document.
+3. All 3 pages are parsed.
+4. All 59 students are detected.
+5. Student names are reconstructed correctly when wrapped.
+6. Subject columns are detected correctly.
+7. DS is detected.
+8. DBMSIS is detected.
+9. OOPTJ is detected.
+10. DLDES is detected.
+11. AI is detected.
+12. DMS-MTA is detected.
+13. DWAV is detected.
+14. Counselling is excluded.
+15. TOTAL is excluded.
+16. No false page-header warnings appear.
+17. Below 65% works correctly.
+18. 65%–74% works correctly.
+19. Subject-wise counts are correct.
+20. Overall subject occurrence count is correct.
+21. Graph is generated.
+22. Graph does not overlap anything.
+23. Student-wise analysis is a proper table.
+24. Long student names wrap correctly.
+25. PDF automatically creates additional pages when required.
+26. PDF table headers repeat on new pages.
+27. Excel export contains the same analysis.
+28. PDF export contains the same analysis.
+29. Filename contains selected date + year + section.
+30. Section input accepts multi-character values without losing focus.
+
+Do not change unrelated parts of the application.
+Do not remove existing functionality.
+Fix the PDF parsing and report-generation architecture properly rather than applying visual patches.
