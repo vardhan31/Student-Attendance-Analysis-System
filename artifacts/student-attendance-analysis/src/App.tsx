@@ -151,6 +151,22 @@ function isPdfRegistrationCandidate(value: unknown): boolean {
   return /^[A-Z0-9./-]+$/i.test(text) && /\d/.test(text) && /[A-Z]/i.test(text);
 }
 
+function findPdfRegistrationInLine(line: PdfLine): PdfCell | undefined {
+  const complete = line.items.find((item) => isPdfRegistrationCandidate(item.text));
+  if (complete) return complete;
+  for (let start = 0; start < line.items.length; start += 1) {
+    for (let size = 2; size <= Math.min(4, line.items.length - start); size += 1) {
+      const group = line.items.slice(start, start + size);
+      const text = group.map((item) => item.text).join("").replace(/\s+/g, "");
+      if (!isPdfRegistrationCandidate(text)) continue;
+      const first = group[0];
+      const last = group[group.length - 1];
+      return { text, x: first.x, y: first.y, width: Math.max(first.width, last.x + last.width - first.x) };
+    }
+  }
+  return undefined;
+}
+
 function isPdfCourseCode(value: unknown): boolean {
   const text = safeText(value).replace(/\s+/g, "");
   return text.length >= 4 && /^[A-Z0-9-]+$/i.test(text) && /\d/.test(text) && /[A-Z]/i.test(text) && (/^\d/.test(text) || /\d$/.test(text));
@@ -267,10 +283,11 @@ function parsePdfRows(lines: PdfLine[], mapping: PdfHeaderMapping, pageName: str
 function parsePdfRowsFromAnchors(lines: PdfLine[], serialOffset: number, subjectColumns: PdfCell[] = []): { rows: AttendanceRow[]; percentageCount: number } {
   const rows: AttendanceRow[] = [];
   let percentageCount = 0;
-  const anchorIndexes = lines.map((line, index) => line.items.some((item) => isPdfRegistrationCandidate(item.text)) ? index : -1).filter((index) => index >= 0);
+  const lineRegistrations = lines.map((line) => findPdfRegistrationInLine(line));
+  const anchorIndexes = lineRegistrations.map((registration, index) => registration ? index : -1).filter((index) => index >= 0);
   anchorIndexes.forEach((lineIndex, anchorIndex) => {
     const line = lines[lineIndex];
-    const registrationCell = line.items.find((item) => isPdfRegistrationCandidate(item.text));
+    const registrationCell = lineRegistrations[lineIndex];
     if (!registrationCell) return;
     const nextAnchorIndex = anchorIndexes[anchorIndex + 1] ?? lines.length;
     const block = lines.slice(lineIndex, nextAnchorIndex);
@@ -281,7 +298,7 @@ function parsePdfRowsFromAnchors(lines: PdfLine[], serialOffset: number, subject
     const firstNumericX = Math.min(...numericItems.map((item) => item.x));
     const name = block
       .flatMap((blockLine) => blockLine.items)
-      .filter((item) => item !== registrationCell && item.x > registrationCell.x && item.x < firstNumericX && !isPdfRegistrationCandidate(item.text) && parseAttendance(item.text) === null)
+      .filter((item) => item.x >= registrationCell.x + registrationCell.width - 2 && item.x < firstNumericX && !isPdfRegistrationCandidate(item.text) && parseAttendance(item.text) === null)
       .map((item) => item.text)
       .join(" ")
       .trim();
@@ -335,7 +352,7 @@ async function readPdf(file: File): Promise<ParseResult> {
       itemCount: items.length,
       extractedTextLength: items.map((item) => item.text).join(" ").length,
       items: items.slice(0, 50).map((item) => ({ text: item.text, x: item.x, y: item.y })),
-      registrationCandidates: items.filter((item) => isPdfRegistrationCandidate(item.text)).map((item) => item.text),
+      registrationCandidates: lines.map((line) => findPdfRegistrationInLine(line)?.text).filter((value): value is string => Boolean(value)),
       percentageValues: items.filter((item) => parseAttendance(item.text) !== null).map((item) => item.text),
       possibleStudentNames: lines.flatMap((line) => {
         const registration = line.items.find((item) => isPdfRegistrationCandidate(item.text));
