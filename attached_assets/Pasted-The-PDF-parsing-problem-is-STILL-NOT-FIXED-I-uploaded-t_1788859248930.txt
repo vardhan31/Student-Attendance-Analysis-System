@@ -1,0 +1,120 @@
+The PDF parsing problem is STILL NOT FIXED.
+
+I uploaded the same valid attendance PDF, and the application STILL shows:
+
+"No attendance table was detected in this PDF. Please upload a PDF with registration number, student name, and subject attendance columns."
+
+STOP making UI/report changes.
+
+I need you to debug the actual PDF parsing implementation now.
+
+IMPORTANT:
+The uploaded attendance PDF is a valid attendance report and follows the sample format I provided earlier. It contains multiple pages of student attendance records.
+
+DO NOT:
+- hardcode subjects
+- hardcode students
+- create mock data
+- hide this error
+- change only the error message
+- bypass the parser
+
+Instead:
+
+1. Search the entire codebase for the exact error text:
+   "No attendance table was detected in this PDF"
+
+2. Find the exact function that produces this error.
+
+3. Trace the PDF upload flow backwards and identify:
+   - PDF library being used
+   - PDF text extraction function
+   - extracted text structure
+   - table detection logic
+   - exact boolean/condition that evaluates to false
+
+4. Add temporary console debugging immediately before the failure.
+
+Log:
+   - PDF page count
+   - extracted text length for every page
+   - first 50 extracted text items for page 1
+   - text item coordinates if available
+   - registration-number matches
+   - percentage matches
+   - possible student-name matches
+   - detected headers
+   - detected subject candidates
+   - final parsed rows
+
+5. DO NOT assume the PDF table is returned as a normal HTML-like table.
+
+PDF text may be returned as individual text fragments.
+
+Therefore reconstruct rows using text positions / coordinates where necessary.
+
+6. Registration number should be the primary student-row anchor.
+
+When a registration number is detected:
+   → start a student record
+   → collect the following student-name text
+   → collect attendance percentage values
+   → associate percentages with dynamically detected subjects
+
+7. The complete PDF must be treated as ONE document.
+
+If the PDF has 3 pages:
+   Page 1 + Page 2 + Page 3
+   = one attendance dataset.
+
+Do not treat PDF pages as Excel sheets.
+
+8. Do NOT require the header to be detected perfectly before accepting the PDF.
+
+If valid registration numbers, student names, and attendance percentages are detected, the PDF should be accepted even if the PDF text extraction fragmented the header.
+
+9. SUBJECTS MUST BE DYNAMIC.
+
+Never hardcode the subjects from the sample PDF.
+
+The sample subjects are only an example.
+
+Future PDFs can contain different subjects.
+
+Detect actual subject names from each uploaded PDF.
+
+10. ALWAYS EXCLUDE:
+
+   Counselling
+   Counseling
+   TOTAL
+   Total
+   TOTAL %
+   aggregate/summary fields
+   registration number
+   student name
+   serial number
+
+Counselling and Total must NEVER enter attendance analysis.
+
+11. Do not modify Excel functionality.
+
+12. Do not modify the PDF report generation yet.
+
+FIRST make this work:
+
+Upload PDF
+→ PDF successfully parsed
+→ students detected
+→ actual subjects detected
+→ Counselling excluded
+→ Total excluded
+→ application proceeds to Year / Section / Date / Attendance Range
+
+13. If parsing still fails, DO NOT simply tell me the PDF is unsupported.
+
+Show the actual debugging result and identify the exact parser assumption that is failing.
+
+The task is NOT complete until the provided attendance PDF successfully passes PDF parsing without showing:
+
+"No attendance table was detected in this PDF."
