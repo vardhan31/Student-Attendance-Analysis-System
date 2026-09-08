@@ -1,0 +1,248 @@
+Modify the attendance upload and analysis flow so that Excel files and PDF files are handled differently.
+
+IMPORTANT:
+Do NOT change the existing attendance range logic, report generation logic, Excel/PDF export logic, UI styling, or subject-exclusion rules unless specifically required below.
+
+==================================================
+1. EXCEL INPUT HANDLING
+==================================================
+
+If the uploaded file is Excel (.xlsx or .xls):
+
+A. If the workbook contains MULTIPLE sheets:
+- Show a clear "Select Sheet" step.
+- Display the available sheet names.
+- Let the user select exactly one sheet to analyze.
+- Do NOT analyze all sheets together.
+
+B. If the workbook contains ONLY ONE sheet:
+- Do NOT show a sheet-selection screen.
+- Automatically select that sheet.
+- Continue directly to the next configuration step.
+
+After the sheet is selected/automatically selected, continue with:
+- Year selection
+- Section entry
+- Report date selection
+- Attendance range selection
+- Analyze
+
+==================================================
+2. PDF INPUT HANDLING
+==================================================
+
+If the uploaded file is PDF:
+
+IMPORTANT:
+A PDF does NOT have Excel-style sheets.
+
+Therefore:
+- NEVER show a "Select Sheet" step for PDF files.
+- Treat the entire uploaded PDF as ONE attendance source/document.
+- Multiple PDF pages are simply pages of the same document.
+- Do NOT treat Page 1, Page 2, Page 3, etc. as separate sheets.
+
+After PDF upload and successful parsing:
+- Continue directly to the configuration step:
+  Year → Section → Report Date → Attendance Range → Analyze.
+
+==================================================
+3. MULTI-PAGE PDF PARSING
+==================================================
+
+The PDF attendance format can contain multiple pages.
+
+The parser must process ALL pages of the uploaded PDF as one continuous attendance dataset.
+
+For example:
+Page 1 contains:
+Registration Number | Student Name | Subjects...
+
+Page 2 may contain only continuation rows and may NOT repeat the header.
+
+Page 3 may also contain continuation rows.
+
+The parser must NOT produce warnings such as:
+
+"Page 2: could not find a registration number and name header row."
+"Page 3: could not find a registration number and name header row."
+
+when those pages are simply continuation pages of the same attendance table.
+
+Instead:
+- Detect the attendance table/header structure from the first relevant page.
+- Maintain the detected column mapping across subsequent pages.
+- Continue extracting student rows from subsequent pages even when the header is not repeated.
+- Combine all valid student rows from all pages into one dataset.
+
+If a later page contains a genuinely different table structure, handle it safely rather than blindly applying the previous mapping.
+
+==================================================
+4. SUBJECT DETECTION
+==================================================
+
+For BOTH Excel and PDF:
+
+Detect:
+- Registration Number
+- Student Name
+- Actual subject attendance columns/data
+
+ONLY actual subjects must be analyzed.
+
+Always exclude:
+- Total
+- Counselling
+- Total attendance
+- Counselling attendance
+- Non-subject metadata
+- Other summary/non-subject columns
+
+These must NEVER appear as subjects in the attendance analysis.
+
+==================================================
+5. CONFIGURATION STEP
+==================================================
+
+After the source is ready, show:
+
+Year:
+- Dropdown
+- I
+- II
+- III
+- IV
+
+Section:
+- Text input
+- Must allow normal multi-character typing without losing focus after the first character.
+- Example: user should be able to type "11", "19", "A", "B", etc. continuously without having to click the field after every character.
+
+Report Date:
+- Use a calendar/date picker.
+- User selects the date on which the report is being generated.
+- The selected date must be used in the exported Excel/PDF filename and report header.
+
+Attendance Range:
+ONLY these two options:
+1. Below 65%
+2. 65% – 74%
+
+Keep the existing definitions:
+- Below 65% = attendance strictly below 65%.
+- 65%–74% = 65% inclusive and 75% exclusive.
+
+==================================================
+6. ANALYSIS
+==================================================
+
+After the user clicks "Analyze":
+
+Analyze the selected Excel sheet OR the complete PDF document depending on the uploaded file type.
+
+Calculate:
+- Students matching the selected attendance range
+- Subject-wise attendance
+- Student count
+- Number of students per subject
+- Overall subject count
+- Graph representation
+
+The same analysis results must be used for both Excel and PDF reports.
+
+==================================================
+7. IMPORTANT UX FLOW
+==================================================
+
+The flow must be:
+
+EXCEL:
+Upload Excel
+↓
+If multiple sheets → Select Sheet
+If single sheet → Skip Sheet Selection
+↓
+Year
+↓
+Section
+↓
+Report Date
+↓
+Attendance Range
+↓
+Analyze
+
+PDF:
+Upload PDF
+↓
+Parse complete PDF as ONE document
+↓
+Year
+↓
+Section
+↓
+Report Date
+↓
+Attendance Range
+↓
+Analyze
+
+NEVER:
+PDF Upload
+↓
+Sheet Selection
+
+That is incorrect.
+
+==================================================
+8. ERROR HANDLING
+==================================================
+
+Do not show false workbook/sheet warnings for PDF files.
+
+Do not refer to PDF pages as "sheets".
+
+Only show a warning when the parser genuinely cannot identify the required attendance information.
+
+If PDF pages continue the same attendance table without repeating headers, process them using the header mapping already detected from the earlier page.
+
+==================================================
+9. PDF.JS
+==================================================
+
+Keep the existing PDF.js worker fix.
+
+The PDF upload must work without:
+"No 'GlobalWorkerOptions.workerSrc' specified."
+
+Ensure the PDF worker is configured correctly for the current frontend/build environment.
+
+==================================================
+10. FINAL VERIFICATION
+==================================================
+
+Test BOTH:
+
+A. Excel:
+- Single-sheet Excel
+- Multi-sheet Excel
+
+B. PDF:
+- Single-page PDF
+- Multi-page PDF
+- Multi-page PDF where only the first page contains the table header
+- Pages containing continuation student rows
+
+Verify:
+- Excel multi-sheet files show sheet selection.
+- Excel single-sheet files skip sheet selection.
+- PDF NEVER shows sheet selection.
+- All PDF pages are combined into one attendance dataset.
+- Registration numbers and student names are extracted across all pages.
+- Subject attendance is extracted correctly.
+- Total and Counselling are excluded.
+- No false "could not find registration number and name header row" warnings appear for normal continuation pages.
+- Section input accepts multi-character values normally.
+- Selected report date is used correctly.
+- The two attendance ranges remain unchanged.
+- Existing analysis and report-generation functionality remains intact.

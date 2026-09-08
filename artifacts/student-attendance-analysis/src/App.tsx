@@ -104,62 +104,86 @@ function parseSheet(sheet: XLSX.WorkSheet, sheetName: string): { rows: Attendanc
   return { rows, subjects, warnings };
 }
 
-type PdfCell = { text: string; x: number; width: number };
+const PDF_DOCUMENT_KEY = "__pdf_document__";
+type PdfCell = { text: string; x: number; y: number; width: number };
 type PdfLine = { y: number; items: PdfCell[] };
+type PdfHeaderMapping = {
+  headerY: number;
+  registration: PdfCell;
+  name: PdfCell;
+  subjects: PdfCell[];
+};
 
 function groupPdfLines(items: PdfCell[]): PdfLine[] {
   const lines: PdfLine[] = [];
   items.forEach((item) => {
-    const y = (item as PdfCell & { y?: number }).y ?? 0;
-    const line = lines.find((candidate) => Math.abs(candidate.y - y) <= 3);
+    const line = lines.find((candidate) => Math.abs(candidate.y - item.y) <= 3);
     if (line) line.items.push(item);
-    else lines.push({ y, items: [item] });
+    else lines.push({ y: item.y, items: [item] });
   });
   return lines.map((line) => ({ ...line, items: line.items.sort((a, b) => a.x - b.x) })).sort((a, b) => b.y - a.y);
 }
 
 function pdfColumnMatch(line: PdfLine, x: number): PdfCell | undefined {
-  return line.items.filter((item) => Math.abs(item.x - x) < 110).sort((a, b) => Math.abs(a.x - x) - Math.abs(b.x - x))[0];
+  return line.items.filter((item) => Math.abs(item.x - x) < 80).sort((a, b) => Math.abs(a.x - x) - Math.abs(b.x - x))[0];
 }
 
-function parsePdfPage(items: Array<PdfCell & { y: number }>, pageName: string): { rows: AttendanceRow[]; subjects: string[]; warnings: string[] } {
-  const warnings: string[] = [];
-  const lines = groupPdfLines(items);
-  const headerIndex = lines.findIndex((line) => {
+function findPdfHeaderCell(line: PdfLine, pattern: RegExp): PdfCell | undefined {
+  for (let index = 0; index < line.items.length; index += 1) {
+    for (let size = 1; size <= Math.min(3, line.items.length - index); size += 1) {
+      const group = line.items.slice(index, index + size);
+      const text = normalizeHeader(group.map((item) => item.text).join(" "));
+      if (pattern.test(text)) {
+        const first = group[0];
+        const last = group[group.length - 1];
+        return { text: group.map((item) => item.text).join(" "), x: first.x, y: first.y, width: Math.max(first.width, last.x + last.width - first.x) };
+      }
+    }
+  }
+  return undefined;
+}
+
+function findPdfHeaderMapping(lines: PdfLine[]): PdfHeaderMapping | null {
+  const headerLine = lines.find((line) => {
     const text = normalizeHeader(line.items.map((item) => item.text).join(" "));
     return /(REGD|REGISTRATION|REG NO|ROLL NO)/.test(text) && /(NAME|STUDENT NAME)/.test(text);
   });
-  if (headerIndex < 0) {
-    warnings.push(`${pageName}: could not find a registration number and name header row.`);
-    return { rows: [], subjects: [], warnings };
-  }
-  const header = lines[headerIndex].items;
-  const regHeader = header.find((item) => /(REGD|REGISTRATION|REG NO|ROLL NO)/.test(normalizeHeader(item.text)));
-  const nameHeader = header.find((item) => /^(NAME|STUDENT NAME)$/.test(normalizeHeader(item.text)) || normalizeHeader(item.text).includes("STUDENT NAME"));
-  if (!regHeader || !nameHeader) {
-    warnings.push(`${pageName}: required registration number and name columns were not detected.`);
-    return { rows: [], subjects: [], warnings };
-  }
-  const dataLines = lines.slice(headerIndex + 1).filter((line) => {
+  if (!headerLine) return null;
+  const registration = findPdfHeaderCell(headerLine, /(REGD|REGISTRATION|REG NO|ROLL NO)/);
+  const name = findPdfHeaderCell(headerLine, /^(NAME|STUDENT NAME)$/);
+  if (!registration || !name) return null;
+  const dataLines = lines.filter((line) => line.y < headerLine.y && !/(REGD|REGISTRATION|REG NO|ROLL NO)/.test(normalizeHeader(line.items.map((item) => item.text).join(" "))));
+  const subjects = headerLine.items
+    .filter((item) => item !== registration && item !== name && !looksLikeMetadata(item.text))
+    .filter((item) => dataLines.some((line) => {
+      const cell = pdfColumnMatch(line, item.x);
+      return cell && parseAttendance(cell.text) !== null;
+    }));
+  return { headerY: headerLine.y, registration, name, subjects: Array.from(new Map(subjects.map((item) => [safeText(item.text), item])).values()) };
+}
+
+function samePdfSubjects(first: PdfHeaderMapping, next: PdfHeaderMapping): boolean {
+  const firstNames = first.subjects.map((item) => normalizeHeader(item.text)).join("|");
+  const nextNames = next.subjects.map((item) => normalizeHeader(item.text)).join("|");
+  return firstNames === nextNames;
+}
+
+function parsePdfRows(lines: PdfLine[], mapping: PdfHeaderMapping, pageName: string): { rows: AttendanceRow[]; duplicateRegs: Set<string> } {
+  const dataLines = lines.filter((line) => {
     const lineText = normalizeHeader(line.items.map((item) => item.text).join(" "));
-    return !/(REGD|REGISTRATION|REG NO|ROLL NO)/.test(lineText);
+    return !/(REGD|REGISTRATION|REG NO|ROLL NO)/.test(lineText) && line.y < mapping.headerY;
   });
-  const columns = header
-    .filter((item) => item !== regHeader && item !== nameHeader && !looksLikeMetadata(item.text))
-    .filter((item) => dataLines.some((line) => pdfColumnMatch(line, item.x) && parseAttendance(pdfColumnMatch(line, item.x)?.text) !== null));
-  const subjects = Array.from(new Set(columns.map((item) => safeText(item.text)).filter(Boolean)));
-  if (!subjects.length) warnings.push(`${pageName}: no numeric attendance subject columns were found.`);
-  const subjectColumns = columns.filter((item) => subjects.includes(safeText(item.text)));
+  const subjectColumns = mapping.subjects;
   const firstSubjectX = subjectColumns[0]?.x ?? Number.POSITIVE_INFINITY;
   const rows: AttendanceRow[] = [];
   const duplicateRegs = new Set<string>();
   const seenRegs = new Set<string>();
   dataLines.forEach((line) => {
-    const regCell = pdfColumnMatch(line, regHeader.x);
+    const regCell = pdfColumnMatch(line, mapping.registration.x);
     const registrationNumber = safeText(regCell?.text);
     if (!registrationNumber || !/[A-Za-z0-9]{3,}/.test(registrationNumber)) return;
     const name = line.items
-      .filter((item) => item !== regCell && item.x >= nameHeader.x - 8 && item.x < firstSubjectX - 5)
+      .filter((item) => item !== regCell && item.x >= mapping.name.x - 8 && item.x < firstSubjectX - 5)
       .map((item) => item.text)
       .join(" ")
       .trim();
@@ -174,33 +198,46 @@ function parsePdfPage(items: Array<PdfCell & { y: number }>, pageName: string): 
     });
     rows.push({ registrationNumber, name, values });
   });
-  if (duplicateRegs.size) warnings.push(`${pageName}: duplicate registration numbers found. The first record is used in analysis.`);
-  if (!rows.length) warnings.push(`${pageName}: no student records were found below the header.`);
-  return { rows, subjects, warnings };
+  return { rows, duplicateRegs };
 }
 
 async function readPdf(file: File): Promise<ParseResult> {
   const data = new Uint8Array(await file.arrayBuffer());
   const pdf = await pdfjsLib.getDocument({ data, useWorkerFetch: false, isEvalSupported: false }).promise;
   if (!pdf.numPages) throw new Error("This PDF does not contain any pages.");
-  const sheets = Array.from({ length: pdf.numPages }, (_, index) => `Page ${index + 1}`);
-  const rows: Record<string, AttendanceRow[]> = {};
-  const subjects: Record<string, string[]> = {};
+  const rows: Record<string, AttendanceRow[]> = { [PDF_DOCUMENT_KEY]: [] };
+  const subjects: Record<string, string[]> = { [PDF_DOCUMENT_KEY]: [] };
   const warnings: string[] = [];
+  let mapping: PdfHeaderMapping | null = null;
+  let headerFound = false;
+  const duplicateRegs = new Set<string>();
   for (let index = 0; index < pdf.numPages; index += 1) {
-    const pageName = sheets[index];
     const page = await pdf.getPage(index + 1);
     const content = await page.getTextContent();
     const items = (content.items as Array<{ str?: unknown; transform?: number[]; width?: number }>)
       .filter((item) => typeof item.str === "string" && item.str.trim() && Array.isArray(item.transform))
       .map((item) => ({ text: safeText(item.str), x: item.transform?.[4] ?? 0, y: item.transform?.[5] ?? 0, width: item.width ?? 0 }));
-    const parsed = parsePdfPage(items, pageName);
-    rows[pageName] = parsed.rows;
-    subjects[pageName] = parsed.subjects;
-    warnings.push(...parsed.warnings);
+    const lines = groupPdfLines(items);
+    const detectedMapping = findPdfHeaderMapping(lines);
+    if (detectedMapping) {
+      if (mapping && !samePdfSubjects(mapping, detectedMapping)) {
+        warnings.push(`Page ${index + 1}: a different table structure was skipped.`);
+        continue;
+      }
+      mapping = detectedMapping;
+      headerFound = true;
+    }
+    if (!mapping) continue;
+    const parsed = parsePdfRows(lines, mapping, `Page ${index + 1}`);
+    rows[PDF_DOCUMENT_KEY].push(...parsed.rows);
+    parsed.duplicateRegs.forEach((registrationNumber) => duplicateRegs.add(registrationNumber));
+    subjects[PDF_DOCUMENT_KEY] = mapping.subjects.map((item) => safeText(item.text)).filter(Boolean);
   }
-  if (!Object.values(rows).some((pageRows) => pageRows.length)) throw new Error("No attendance table was detected in this PDF. Please upload a PDF with registration number, student name, and subject attendance columns.");
-  return { workbook: { fileName: file.name, fileType: "pdf", sheets, activeSheet: sheets[0] }, rows, subjects, warnings };
+  if (!headerFound) warnings.push("The PDF did not contain a recognizable registration number, student name, and subject header.");
+  if (mapping && !mapping.subjects.length) warnings.push("The PDF header was found, but no numeric subject attendance columns were detected.");
+  if (duplicateRegs.size) warnings.push("Duplicate registration numbers were found across the PDF. The first record is used in analysis.");
+  if (!rows[PDF_DOCUMENT_KEY].length) throw new Error("No attendance table was detected in this PDF. Please upload a PDF with registration number, student name, and subject attendance columns.");
+  return { workbook: { fileName: file.name, fileType: "pdf", sheets: [], activeSheet: PDF_DOCUMENT_KEY }, rows, subjects, warnings };
 }
 
 async function readAttendanceFile(file: File): Promise<ParseResult> {
@@ -254,7 +291,7 @@ function buildAnalysis(state: AppState): Analysis | null {
       selectedYear: config.year.trim(),
       selectedSection: config.section.trim(),
       selectedDate: formatDateForReport(config.reportDate),
-      sourceSheet: config.sheetName,
+      sourceSheet: state.workbook?.fileType === "pdf" ? "Complete PDF document" : config.sheetName,
       rangeLabel: rangeLabels[config.range],
     },
     students,
@@ -432,7 +469,7 @@ function Dashboard({ state }: { state: AppState }) {
       <div className="grid gap-5 md:grid-cols-3"><InfoCard number="01" icon={<FileSpreadsheet size={18} />} title="Upload locally" text="Drop an .xlsx, .xls, or .pdf file. Nothing leaves this browser." /><InfoCard number="02" icon={<Filter size={18} />} title="Set the lens" text="Choose Year, Section, report date, source page, and one range." /><InfoCard number="03" icon={<Download size={18} />} title="Export with confidence" text="Download the same analyzed information as Excel or PDF." /></div>
     </div> : <div className="space-y-5">
       <section className="panel overflow-hidden p-5 md:p-7"><div className="flex flex-col justify-between gap-5 sm:flex-row sm:items-start"><div><p className="eyebrow mb-2">Latest local report</p><h2 className="text-2xl font-bold tracking-tight">{analysis.summary.selectedDate}</h2><p className="mt-1 text-sm text-[hsl(var(--muted-foreground))]">Year {analysis.summary.selectedYear} <span className="mx-2 text-[hsl(var(--border))]">/</span> Section {analysis.summary.selectedSection} <span className="mx-2 text-[hsl(var(--border))]">/</span> {analysis.summary.rangeLabel}</p></div><div className="flex gap-2"><Link href="/reports" data-testid="link-review-report" className="action-btn action-primary"><Files size={16} />Review report</Link><Link href="/analysis" data-testid="link-new-analysis-dashboard" className="action-btn action-ghost"><RefreshCw size={16} />New analysis</Link></div></div><div className="mt-8 grid grid-cols-2 gap-3 lg:grid-cols-4"><MetricCard label="Students scanned" value={analysis.summary.totalStudents} detail="unique registrations" /><MetricCard label="At-risk students" value={analysis.summary.uniqueStudents} detail="with one or more matches" accent /><MetricCard label="Subject cases" value={analysis.summary.totalCases} detail="student × subject matches" /><MetricCard label="Subjects detected" value={analysis.summary.totalSubjects} detail="numeric columns" /></div></section>
-      <div className="grid gap-5 lg:grid-cols-[1.1fr_.9fr]"><section className="panel-flat p-5"><SectionHeading title="Most affected subjects" aside="students with a match" />{analysis.subjects.length ? <div className="mt-4 space-y-3">{analysis.subjects.slice(0, 5).map((subject, index) => <div key={subject.subject} data-testid={`dashboard-subject-${index}`}><div className="mb-1.5 flex justify-between text-xs"><span className="font-semibold">{subject.subject}</span><span className="mono text-[hsl(var(--muted-foreground))]">{subject.studentCount}</span></div><div className="h-2 overflow-hidden rounded-full bg-[hsl(var(--muted))]"><div className="h-full rounded-full bg-[hsl(var(--primary))]" style={{ width: `${Math.max(6, (subject.studentCount / Math.max(1, analysis.summary.uniqueStudents)) * 100)}%` }} /></div></div>)}</div> : <p className="mt-5 text-sm text-[hsl(var(--muted-foreground))]">No subject matches in the selected range.</p>}</section><section className="panel-flat p-5"><SectionHeading title="Analysis notes" /><div className="mt-4 space-y-3 text-sm"><NoteLine label="Source file" value={state.workbook?.fileName ?? "Local file"} /><NoteLine label="Report date" value={analysis.summary.selectedDate} /><NoteLine label="Source page / sheet" value={analysis.summary.sourceSheet} /><NoteLine label="Range logic" value={analysis.summary.rangeLabel} /><div className="mt-5 flex items-start gap-2 rounded-lg bg-[hsl(var(--primary)/.07)] p-3 text-xs leading-relaxed text-[hsl(var(--primary))]"><ShieldCheck size={15} className="mt-0.5 shrink-0" />No source file leaves this browser. Reports are generated only when you choose download.</div></div></section></div>
+      <div className="grid gap-5 lg:grid-cols-[1.1fr_.9fr]"><section className="panel-flat p-5"><SectionHeading title="Most affected subjects" aside="students with a match" />{analysis.subjects.length ? <div className="mt-4 space-y-3">{analysis.subjects.slice(0, 5).map((subject, index) => <div key={subject.subject} data-testid={`dashboard-subject-${index}`}><div className="mb-1.5 flex justify-between text-xs"><span className="font-semibold">{subject.subject}</span><span className="mono text-[hsl(var(--muted-foreground))]">{subject.studentCount}</span></div><div className="h-2 overflow-hidden rounded-full bg-[hsl(var(--muted))]"><div className="h-full rounded-full bg-[hsl(var(--primary))]" style={{ width: `${Math.max(6, (subject.studentCount / Math.max(1, analysis.summary.uniqueStudents)) * 100)}%` }} /></div></div>)}</div> : <p className="mt-5 text-sm text-[hsl(var(--muted-foreground))]">No subject matches in the selected range.</p>}</section><section className="panel-flat p-5"><SectionHeading title="Analysis notes" /><div className="mt-4 space-y-3 text-sm"><NoteLine label="Source file" value={state.workbook?.fileName ?? "Local file"} /><NoteLine label="Report date" value={analysis.summary.selectedDate} /><NoteLine label={state.workbook?.fileType === "pdf" ? "Source document" : "Selected sheet"} value={analysis.summary.sourceSheet} /><NoteLine label="Range logic" value={analysis.summary.rangeLabel} /><div className="mt-5 flex items-start gap-2 rounded-lg bg-[hsl(var(--primary)/.07)] p-3 text-xs leading-relaxed text-[hsl(var(--primary))]"><ShieldCheck size={15} className="mt-0.5 shrink-0" />No source file leaves this browser. Reports are generated only when you choose download.</div></div></section></div>
     </div>}
   </main>;
 }
@@ -491,8 +528,8 @@ function AnalysisPage({ state, setState }: { state: AppState; setState: (next: (
     <PageHeader eyebrow="Analysis workspace" title="Set the lens, then inspect the evidence." description="Everything below is computed from the workbook in this browser. No attendance data leaves this session." action={state.workbook ? <button type="button" className="action-btn action-ghost" onClick={() => replaceInputRef.current?.click()} data-testid="button-replace-workbook"><RefreshCw size={16} />Replace workbook</button> : null} />
     <input ref={replaceInputRef} type="file" accept=".xlsx,.xls,.pdf,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,application/pdf" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; if (file) onFile(file); event.target.value = ""; }} data-testid="input-replace-workbook" />
     {!state.workbook ? <section className="mx-auto max-w-3xl"><div className="panel p-5 md:p-7"><SectionHeading title="Upload attendance file" aside="step 01 / 03" /><p className="mb-5 mt-4 text-sm text-[hsl(var(--muted-foreground))]">Use an Excel or PDF attendance file. The detector finds registration numbers, student names, and numeric subject columns without relying on fixed positions.</p><UploadZone onFile={onFile} parsing={state.parsing} error={state.parseError} /></div><div className="mt-4 flex items-start gap-2 px-1 text-xs text-[hsl(var(--muted-foreground))]"><CircleHelp size={14} className="mt-0.5 shrink-0 text-[hsl(var(--primary))]" />Total, Counselling, blank sheets, and ambiguous columns are reported as warnings or excluded.</div></section> : <div className="space-y-5">
-      <section className="grid gap-5 xl:grid-cols-[1.02fr_.98fr]"><div className="panel p-5 md:p-7"><SectionHeading title="Configure analysis" aside="steps 02–03" /><div className="mt-6 grid gap-4 sm:grid-cols-2"><label className="block"><span className="mb-2 block text-xs font-semibold">Year <span className="text-[hsl(var(--accent))]">*</span></span><select className="field" value={state.config.year} onChange={(event) => updateConfig({ year: event.target.value })} data-testid="select-year"><option value="" disabled>Select Year</option><option value="I">I</option><option value="II">II</option><option value="III">III</option><option value="IV">IV</option></select></label><label className="block"><span className="mb-2 block text-xs font-semibold">Section <span className="text-[hsl(var(--accent))]">*</span></span><input className="field" value={state.config.section} onChange={(event) => updateConfig({ section: event.target.value })} placeholder="e.g. 11, 19, A, B" data-testid="input-section" /></label><label className="block"><span className="mb-2 block text-xs font-semibold">Report date <span className="text-[hsl(var(--accent))]">*</span></span><div className="relative"><input className="field pr-10" type="date" value={state.config.reportDate} onChange={(event) => updateConfig({ reportDate: event.target.value })} data-testid="input-report-date" /><CalendarDays size={16} className="pointer-events-none absolute right-3 top-3 text-[hsl(var(--muted-foreground))]" /></div></label><label className="block"><span className="mb-2 block text-xs font-semibold">Source {state.workbook.fileType === "pdf" ? "page" : "sheet"}</span><div className="relative"><select className="field appearance-none pr-10" value={state.config.sheetName} onChange={(event) => updateConfig({ sheetName: event.target.value })} data-testid="select-sheet">{state.workbook.sheets.map((sheet) => <option key={sheet} value={sheet}>{sheet}</option>)}</select><ChevronDown className="pointer-events-none absolute right-3 top-3 text-[hsl(var(--muted-foreground))]" size={16} /></div></label></div><div className="mt-6"><p className="mb-2 text-xs font-semibold">Attendance range</p><div className="grid gap-3 sm:grid-cols-2">{(["below65", "65to74"] as AttendanceRange[]).map((range) => <label key={range} className={`range-card flex cursor-pointer items-start gap-3 rounded-xl p-3.5 ${state.config.range === range ? "selected" : ""}`} data-testid={`range-option-${range}`}><input type="radio" name="range" checked={state.config.range === range} onChange={() => updateConfig({ range })} className="mt-1" /><span><span className="block text-sm font-bold">{rangeLabels[range]}</span><span className="mt-1 block text-xs leading-relaxed text-[hsl(var(--muted-foreground))]">{range === "below65" ? "Attendance strictly below 65%." : "65% inclusive, 75% exclusive."}</span></span>{state.config.range === range ? <Check className="ml-auto shrink-0 text-[hsl(var(--primary))]" size={17} /> : null}</label>)}</div></div>{state.parseError ? <div className="error-box mt-5 flex items-start gap-2 rounded-lg p-3 text-xs" data-testid="status-analysis-error"><AlertTriangle size={15} className="mt-0.5 shrink-0" />{state.parseError}</div> : null}<button type="button" onClick={runAnalysis} className="action-btn action-primary mt-6 w-full sm:w-auto" data-testid="button-run-analysis"><BarChart3 size={16} />Analyze selected source</button></div>
-         <div className="panel-flat p-5 md:p-7"><SectionHeading title="File map" aside="detected locally" /><div className="mt-5 flex items-center gap-3 rounded-xl bg-[hsl(var(--muted)/.55)] p-3.5"><div className="flex h-10 w-10 items-center justify-center rounded-lg bg-[hsl(var(--card))] text-[hsl(var(--primary))]">{state.workbook.fileType === "pdf" ? <FileText size={19} /> : <FileSpreadsheet size={19} />}</div><div className="min-w-0"><p className="truncate text-sm font-bold" data-testid="text-workbook-name">{state.workbook.fileName}</p><p className="mono mt-1 text-[10px] text-[hsl(var(--muted-foreground))]">{state.workbook.fileType.toUpperCase()} · {state.workbook.sheets.length} {state.workbook.sheets.length === 1 ? "source" : "sources"} detected</p></div></div><div className="mt-6"><p className="eyebrow mb-3">Available {state.workbook.fileType === "pdf" ? "pages" : "sheets"}</p><div className="flex max-h-[190px] flex-wrap content-start gap-2 overflow-auto pr-1">{state.workbook.sheets.map((sheet) => <button type="button" key={sheet} onClick={() => updateConfig({ sheetName: sheet })} className={`rounded-lg border px-3 py-2 text-left text-xs font-semibold transition-colors ${state.config.sheetName === sheet ? "border-[hsl(var(--primary))] bg-[hsl(var(--primary)/.1)] text-[hsl(var(--primary))]" : "border-[hsl(var(--border))] bg-[hsl(var(--card))] text-[hsl(var(--muted-foreground))] hover:border-[hsl(var(--primary)/.4)]"}`} data-testid={`button-sheet-${sheet.replace(/\s+/g, "-")}`}>{sheet}</button>)}</div></div><div className="mt-7 border-t border-[hsl(var(--border))] pt-5"><p className="text-xs font-semibold">Detection guardrails</p><ul className="mt-3 space-y-2 text-xs leading-relaxed text-[hsl(var(--muted-foreground))]"><li className="flex gap-2"><Check size={14} className="mt-0.5 shrink-0 text-[hsl(var(--primary))]" />Ratios, percentages, blanks, and invalid values are normalized safely.</li><li className="flex gap-2"><Check size={14} className="mt-0.5 shrink-0 text-[hsl(var(--primary))]" />Total, Counselling, and non-subject metadata are always excluded.</li><li className="flex gap-2"><Check size={14} className="mt-0.5 shrink-0 text-[hsl(var(--primary))]" />Duplicate registration numbers are surfaced before review.</li></ul></div></div></section>
+      <section className="grid gap-5 xl:grid-cols-[1.02fr_.98fr]"><div className="panel p-5 md:p-7"><SectionHeading title="Configure analysis" aside="steps 02–03" /><div className="mt-6 grid gap-4 sm:grid-cols-2"><label className="block"><span className="mb-2 block text-xs font-semibold">Year <span className="text-[hsl(var(--accent))]">*</span></span><select className="field" value={state.config.year} onChange={(event) => updateConfig({ year: event.target.value })} data-testid="select-year"><option value="" disabled>Select Year</option><option value="I">I</option><option value="II">II</option><option value="III">III</option><option value="IV">IV</option></select></label><label className="block"><span className="mb-2 block text-xs font-semibold">Section <span className="text-[hsl(var(--accent))]">*</span></span><input className="field" value={state.config.section} onChange={(event) => updateConfig({ section: event.target.value })} placeholder="e.g. 11, 19, A, B" data-testid="input-section" /></label><label className="block"><span className="mb-2 block text-xs font-semibold">Report date <span className="text-[hsl(var(--accent))]">*</span></span><div className="relative"><input className="field pr-10" type="date" value={state.config.reportDate} onChange={(event) => updateConfig({ reportDate: event.target.value })} data-testid="input-report-date" /><CalendarDays size={16} className="pointer-events-none absolute right-3 top-3 text-[hsl(var(--muted-foreground))]" /></div></label>{state.workbook.fileType === "excel" && state.workbook.sheets.length > 1 ? <label className="block"><span className="mb-2 block text-xs font-semibold">Select Sheet <span className="text-[hsl(var(--accent))]">*</span></span><div className="relative"><select className="field appearance-none pr-10" value={state.config.sheetName} onChange={(event) => updateConfig({ sheetName: event.target.value })} data-testid="select-sheet">{state.workbook.sheets.map((sheet) => <option key={sheet} value={sheet}>{sheet}</option>)}</select><ChevronDown className="pointer-events-none absolute right-3 top-3 text-[hsl(var(--muted-foreground))]" size={16} /></div></label> : null}</div><div className="mt-6"><p className="mb-2 text-xs font-semibold">Attendance range</p><div className="grid gap-3 sm:grid-cols-2">{(["below65", "65to74"] as AttendanceRange[]).map((range) => <label key={range} className={`range-card flex cursor-pointer items-start gap-3 rounded-xl p-3.5 ${state.config.range === range ? "selected" : ""}`} data-testid={`range-option-${range}`}><input type="radio" name="range" checked={state.config.range === range} onChange={() => updateConfig({ range })} className="mt-1" /><span><span className="block text-sm font-bold">{rangeLabels[range]}</span><span className="mt-1 block text-xs leading-relaxed text-[hsl(var(--muted-foreground))]">{range === "below65" ? "Attendance strictly below 65%." : "65% inclusive, 75% exclusive."}</span></span>{state.config.range === range ? <Check className="ml-auto shrink-0 text-[hsl(var(--primary))]" size={17} /> : null}</label>)}</div></div>{state.parseError ? <div className="error-box mt-5 flex items-start gap-2 rounded-lg p-3 text-xs" data-testid="status-analysis-error"><AlertTriangle size={15} className="mt-0.5 shrink-0" />{state.parseError}</div> : null}<button type="button" onClick={runAnalysis} className="action-btn action-primary mt-6 w-full sm:w-auto" data-testid="button-run-analysis"><BarChart3 size={16} />Analyze {state.workbook.fileType === "pdf" ? "PDF" : "selected sheet"}</button></div>
+          <div className="panel-flat p-5 md:p-7"><SectionHeading title="File map" aside="detected locally" /><div className="mt-5 flex items-center gap-3 rounded-xl bg-[hsl(var(--muted)/.55)] p-3.5"><div className="flex h-10 w-10 items-center justify-center rounded-lg bg-[hsl(var(--card))] text-[hsl(var(--primary))]">{state.workbook.fileType === "pdf" ? <FileText size={19} /> : <FileSpreadsheet size={19} />}</div><div className="min-w-0"><p className="truncate text-sm font-bold" data-testid="text-workbook-name">{state.workbook.fileName}</p><p className="mono mt-1 text-[10px] text-[hsl(var(--muted-foreground))]">{state.workbook.fileType === "pdf" ? "PDF · complete document" : `EXCEL · ${state.workbook.sheets.length} ${state.workbook.sheets.length === 1 ? "sheet" : "sheets"} detected`}</p></div></div>{state.workbook.fileType === "excel" && state.workbook.sheets.length > 1 ? <div className="mt-6"><p className="eyebrow mb-3">Select one sheet to analyze</p><div className="flex max-h-[190px] flex-wrap content-start gap-2 overflow-auto pr-1">{state.workbook.sheets.map((sheet) => <button type="button" key={sheet} onClick={() => updateConfig({ sheetName: sheet })} className={`rounded-lg border px-3 py-2 text-left text-xs font-semibold transition-colors ${state.config.sheetName === sheet ? "border-[hsl(var(--primary))] bg-[hsl(var(--primary)/.1)] text-[hsl(var(--primary))]" : "border-[hsl(var(--border))] bg-[hsl(var(--card))] text-[hsl(var(--muted-foreground))] hover:border-[hsl(var(--primary)/.4)]"}`} data-testid={`button-sheet-${sheet.replace(/\s+/g, "-")}`}>{sheet}</button>)}</div></div> : <div className="mt-6 rounded-lg bg-[hsl(var(--muted)/.55)] p-3 text-xs leading-relaxed text-[hsl(var(--muted-foreground))]">{state.workbook.fileType === "pdf" ? "All PDF pages have been combined into one attendance document." : "This workbook has one sheet, which was selected automatically."}</div>}<div className="mt-7 border-t border-[hsl(var(--border))] pt-5"><p className="text-xs font-semibold">Detection guardrails</p><ul className="mt-3 space-y-2 text-xs leading-relaxed text-[hsl(var(--muted-foreground))]"><li className="flex gap-2"><Check size={14} className="mt-0.5 shrink-0 text-[hsl(var(--primary))]" />Ratios, percentages, blanks, and invalid values are normalized safely.</li><li className="flex gap-2"><Check size={14} className="mt-0.5 shrink-0 text-[hsl(var(--primary))]" />Total, Counselling, and non-subject metadata are always excluded.</li><li className="flex gap-2"><Check size={14} className="mt-0.5 shrink-0 text-[hsl(var(--primary))]" />Duplicate registration numbers are surfaced before review.</li></ul></div></div></section>
       {state.warnings.length ? <div className="warning-box flex items-start gap-3 rounded-xl p-4 text-xs leading-relaxed" data-testid="status-workbook-warnings"><AlertTriangle size={17} className="mt-0.5 shrink-0" /><div><p className="font-bold">Review workbook notes</p><ul className="mt-1.5 list-disc space-y-1 pl-4">{state.warnings.slice(0, 7).map((warning, index) => <li key={`${warning}-${index}`}>{warning}</li>)}</ul>{state.warnings.length > 7 ? <p className="mt-1 font-semibold">+ {state.warnings.length - 7} more notes</p> : null}</div></div> : null}
       {state.analysis ? <Results analysis={state.analysis} workbookName={state.workbook.fileName} /> : <div className="panel-flat flex items-center gap-4 p-5 text-sm text-[hsl(var(--muted-foreground))]"><div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[hsl(var(--muted))]"><ArrowDownUp size={18} /></div><div><p className="font-semibold text-[hsl(var(--foreground))]">Results will appear here</p><p className="mt-1 text-xs">Choose your context and range, then run the analysis.</p></div></div>}
     </div>}
